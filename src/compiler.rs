@@ -1,6 +1,9 @@
 use crate::lexer::{lex, Token, TokenKind};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StaticType { Int, Task }
+
 #[derive(Debug, Clone)]
 pub enum Instruction {
     Const(i64),
@@ -34,6 +37,7 @@ pub fn compile(source: &str) -> Result<Vec<Instruction>, String> {
         tokens,
         pos: 0,
         locals: Vec::new(),
+        local_types: Vec::new(),
         scopes: Vec::new(),
         code: Vec::new(),
         loops: Vec::new(),
@@ -75,6 +79,7 @@ struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     locals: Vec<String>,
+    local_types: Vec<StaticType>,
     scopes: Vec<Vec<String>>,
     code: Vec<Instruction>,
     loops: Vec<Vec<usize>>,
@@ -125,11 +130,12 @@ impl Parser {
             for name in names.into_iter().rev() {
                 if self.locals.last() == Some(&name) {
                     self.locals.pop();
+                    self.local_types.pop();
                 }
             }
         }
     }
-    fn declare(&mut self, name: String) -> Result<usize, String> {
+    fn declare(&mut self, name: String, ty: StaticType) -> Result<usize, String> {
         let scope = self
             .scopes
             .last_mut()
@@ -140,6 +146,7 @@ impl Parser {
         let slot = self.locals.len();
         scope.push(name.clone());
         self.locals.push(name);
+        self.local_types.push(ty);
         Ok(slot)
     }
     fn program(&mut self) -> Result<Vec<Instruction>, String> {
@@ -171,6 +178,7 @@ impl Parser {
                 return Err(format!("duplicate function '{name}'"));
             }
             self.locals = params.clone();
+            self.local_types = vec![StaticType::Int; params.len()];
             self.scopes = vec![params.clone()];
             self.code.clear();
             self.loops.clear();
@@ -183,6 +191,7 @@ impl Parser {
             body.push(Instruction::Return);
             definitions.push(Instruction::DefineFunction(name, params, body));
             self.locals.clear();
+            self.local_types.clear();
             self.scopes.clear();
         }
         if !functions.contains_key("main") {
@@ -236,8 +245,8 @@ impl Parser {
             TokenKind::Let => {
                 let name = self.ident()?;
                 self.eat(TokenKind::Equal)?;
-                self.expression(0)?;
-                let slot = self.declare(name)?;
+                let ty = self.expression(0)?;
+                let slot = self.declare(name, ty)?;
                 self.code.push(Instruction::Store(slot));
                 self.eat(TokenKind::Semicolon)
             }
@@ -246,13 +255,17 @@ impl Parser {
                 let slot = self
                     .lookup(&name)
                     .ok_or_else(|| format!("assignment to unknown variable '{name}'"))?;
-                self.expression(0)?;
+                let ty = self.expression(0)?;
+                if self.local_types[slot] != ty {
+                    return Err(format!("cannot assign {ty:?} to {name} ({:?})", self.local_types[slot]));
+                }
                 self.code.push(Instruction::Store(slot));
                 self.eat(TokenKind::Semicolon)
             }
             TokenKind::Print => {
                 self.eat(TokenKind::LParen)?;
-                self.expression(0)?;
+                let ty = self.expression(0)?;
+                if ty != StaticType::Int { return Err("print expects an integer expression".into()); }
                 self.eat(TokenKind::RParen)?;
                 self.eat(TokenKind::Semicolon)?;
                 self.code.push(Instruction::Print);
@@ -278,7 +291,8 @@ impl Parser {
                 Ok(())
             }
             TokenKind::Return => {
-                self.expression(0)?;
+                let ty = self.expression(0)?;
+                if ty != StaticType::Int { return Err("return expects an integer expression".into()); }
                 self.eat(TokenKind::Semicolon)?;
                 self.code.push(Instruction::Return);
                 Ok(())
@@ -288,7 +302,8 @@ impl Parser {
     }
     fn if_statement(&mut self) -> Result<(), String> {
         self.eat(TokenKind::LParen)?;
-        self.expression(0)?;
+        let condition_type = self.expression(0)?;
+        if condition_type != StaticType::Int { return Err("if condition must be an integer (zero is false)".into()); }
         self.eat(TokenKind::RParen)?;
         let branch = self.code.len();
         self.code.push(Instruction::JumpIfFalse(usize::MAX));
@@ -316,7 +331,8 @@ impl Parser {
     fn while_statement(&mut self) -> Result<(), String> {
         let condition = self.code.len();
         self.eat(TokenKind::LParen)?;
-        self.expression(0)?;
+        let condition_type = self.expression(0)?;
+        if condition_type != StaticType::Int { return Err("while condition must be an integer (zero is false)".into()); }
         self.eat(TokenKind::RParen)?;
         let exit = self.code.len();
         self.code.push(Instruction::JumpIfFalse(usize::MAX));
@@ -338,16 +354,17 @@ impl Parser {
         }
         Ok(())
     }
-    fn expression(&mut self, min_precedence: u8) -> Result<(), String> {
+    fn expression(&mut self, min_precedence: u8) -> Result<StaticType, String> {
         match self.take() {
-            TokenKind::Number(value) => self.code.push(Instruction::Const(value)),
+            TokenKind::Number(value) => { self.code.push(Instruction::Const(value)); StaticType::Int }, 
             TokenKind::Ident(name) => {
                 if *self.kind() == TokenKind::LParen {
                     self.take();
                     let mut argc = 0;
                     if *self.kind() != TokenKind::RParen {
                         loop {
-                            self.expression(0)?;
+                            let arg_type = self.expression(0)?;
+                            if arg_type != StaticType::Int { return Err("function arguments must be integers".into()); }
                             argc += 1;
                             if *self.kind() != TokenKind::Comma {
                                 break;
@@ -357,16 +374,19 @@ impl Parser {
                     }
                     self.eat(TokenKind::RParen)?;
                     self.code.push(Instruction::Call(name, argc));
+                    StaticType::Int
                 } else {
                     let slot = self
                         .lookup(&name)
                         .ok_or_else(|| format!("unknown variable '{name}'"))?;
                     self.code.push(Instruction::Load(slot));
+                    self.local_types[slot]
                 }
             }
             TokenKind::LParen => {
-                self.expression(0)?;
+                let ty = self.expression(0)?;
                 self.eat(TokenKind::RParen)?;
+                ty
             }
             TokenKind::Worker => {
                 self.eat(TokenKind::Dot)?;
@@ -374,23 +394,31 @@ impl Parser {
                     TokenKind::Submit => {
                         self.eat(TokenKind::LBrace)?;
                         let outer_code = std::mem::take(&mut self.code);
-                        self.expression(0)?;
+                        let task_type = self.expression(0)?;
+                        if task_type != StaticType::Int { return Err("worker task must produce an integer".into()); }
                         let mut task_code = std::mem::replace(&mut self.code, outer_code);
                         task_code.push(Instruction::Halt);
                         self.eat(TokenKind::RBrace)?;
                         self.code.push(Instruction::Submit(task_code));
+                        StaticType::Task
                     }
                     TokenKind::Wait => {
                         self.eat(TokenKind::LParen)?;
-                        self.expression(0)?;
+                        let handle_type = self.expression(0)?;
+                        if handle_type != StaticType::Task { return Err("worker.wait expects a task handle".into()); }
                         self.eat(TokenKind::RParen)?;
                         self.code.push(Instruction::Wait);
+                        StaticType::Int
                     }
                     other => return Err(format!("expected submit or wait, got {other:?}")),
                 }
             }
             other => return Err(format!("expected expression, got {other:?}")),
-        }
+        };
+        let mut expression_type = match self.code.last() {
+            Some(Instruction::Submit(_)) => StaticType::Task,
+            _ => StaticType::Int,
+        };
         loop {
             let (precedence, op) = match self.kind() {
                 TokenKind::EqualEqual => (1, Some(Instruction::Eq)),
@@ -408,10 +436,13 @@ impl Parser {
             if precedence == 0 || precedence < min_precedence {
                 break;
             }
+            if expression_type != StaticType::Int { return Err("task handles cannot be used with operators".into()); }
             self.take();
-            self.expression(precedence + 1)?;
+            let right_type = self.expression(precedence + 1)?;
+            if right_type != StaticType::Int { return Err("operators require integer operands".into()); }
             self.code.push(op.expect("operator was matched"));
+            expression_type = StaticType::Int;
         }
-        Ok(())
+        Ok(expression_type)
     }
 }
