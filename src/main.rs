@@ -30,7 +30,9 @@ fn worker_demo(args: &[String]) -> Result<(), String> {
 }
 
 fn thread_count_default() -> usize {
-    std::thread::available_parallelism().map(usize::from).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
 }
 
 fn main() -> ExitCode {
