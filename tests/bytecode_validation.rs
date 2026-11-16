@@ -264,3 +264,105 @@ fn verifier_accepts_initialized_parameters() {
     let mut vm = Vm::new(1).unwrap();
     assert_eq!(vm.run(&code).unwrap(), &["7".to_string()]);
 }
+
+
+#[test]
+fn verifier_rejects_task_handle_used_by_integer_operator() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+            Instruction::Const(2),
+            Instruction::Add,
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("requires Int operands"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_wait_on_integer_value() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(0),
+            Instruction::Wait,
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("requires Task"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_task_handle_print() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("Print") && error.contains("Task"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_different_stack_types_at_branch_merge() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::JumpIfFalse(5),
+            Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+            Instruction::Jump(6),
+            Instruction::Const(0),
+            Instruction::Const(9),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("inconsistent stack types"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_different_local_types_at_branch_merge() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::JumpIfFalse(6),
+            Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+            Instruction::Store(0),
+            Instruction::Jump(8),
+            Instruction::Const(0),
+            Instruction::Const(7),
+            Instruction::Store(0),
+            Instruction::Load(0),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("inconsistent local types"), "{error}");
+}
