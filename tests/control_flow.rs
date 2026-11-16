@@ -82,23 +82,29 @@ fn loop_control_outside_loop_is_rejected() {
 fn non_main_functions_must_return_on_every_branch() {
     assert!(compiler::compile(
         "fn value(flag){if(flag){return 1;}else{return 2;}}fn main(){print(value(1));}",
-    ).is_ok());
+    )
+    .is_ok());
 
-    let missing_else = compiler::compile(
-        "fn value(flag){if(flag){return 1;}}fn main(){print(value(1));}",
-    ).unwrap_err();
-    assert!(missing_else.contains("may finish without returning"), "{missing_else}");
+    let missing_else =
+        compiler::compile("fn value(flag){if(flag){return 1;}}fn main(){print(value(1));}")
+            .unwrap_err();
+    assert!(
+        missing_else.contains("may finish without returning"),
+        "{missing_else}"
+    );
 
-    let loop_only = compiler::compile(
-        "fn value(flag){while(flag){return 1;}}fn main(){print(value(1));}",
-    ).unwrap_err();
-    assert!(loop_only.contains("may finish without returning"), "{loop_only}");
+    let loop_only =
+        compiler::compile("fn value(flag){while(flag){return 1;}}fn main(){print(value(1));}")
+            .unwrap_err();
+    assert!(
+        loop_only.contains("may finish without returning"),
+        "{loop_only}"
+    );
 }
 
 #[test]
 fn unreachable_statements_after_return_are_rejected() {
-    let error = compiler::compile("fn value(){return 1;print(2);}fn main(){}")
-        .unwrap_err();
+    let error = compiler::compile("fn value(){return 1;print(2);}fn main(){}").unwrap_err();
     assert!(error.contains("unreachable statement"), "{error}");
 }
 
