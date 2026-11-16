@@ -19,7 +19,7 @@ Expected output for `worker-basic.nx` is `42`; expected output for `control-flow
 - Loops: `while`, `break`, and `continue`.
 - Operators: `== != < <= > >=`, `+ - * /`.
 - Output: `print(expression);`.
-- Native tasks: `worker.submit { expression }` captures active integer locals by value; `worker.wait(task)` consumes a task handle once.
+- Native tasks: `worker.submit { expression }` captures active integer locals by value; `worker.wait(task)` consumes a task handle once. Task locals are move-only: reading one transfers ownership, so reuse is rejected; reassignment requires the prior handle to have been consumed.
 - Compile-time semantic checks: duplicate declarations/functions/parameters, unknown variables/functions, invalid function arity, loop control outside a loop, task-handle misuse, non-integer operator/print/return/worker results, missing function return paths, and unreachable statements after guaranteed returns are rejected.
 - Control-flow validation: non-`main` functions must return an integer on every statically guaranteed path; `if`/`else` branches are analyzed, while loops are not assumed to execute. The VM validates jump targets, stack underflow, typed stack agreement at branch merges, function signatures and argument types, exact return contracts, worker-result contracts, call arity, and local-slot bounds and initialization before execution. Its forward CFG worklist iterates to a fixed point, intersecting local initialization across all incoming paths and rejecting conflicting local types. Worker captures are checked against the initialization state at submission time. Structural checks also reject invalid local loads and nested function definitions, including when they occur in unreachable bytecode.
 
@@ -59,3 +59,8 @@ fn main() {
 ```
 
 The compiler pre-collects signatures before compiling bodies, so forward calls and recursion are type-checked. The VM independently reconstructs the signatures from bytecode and verifies argument types, parameter slots, return types, and task-handle use before execution. Legacy unannotated parameters and return values default to `int`.
+
+
+### Linear task-handle ownership
+
+Task handles are move-only values. Loading a task local transfers ownership to the expression; waiting, passing, or returning the value consumes that local. The compiler tracks moved handles across branches and loops. The VM verifier independently marks task locals moved on load, rejects a second load, and prevents overwriting a still-live handle.
