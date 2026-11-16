@@ -89,6 +89,18 @@ impl Vm {
                 _ => {}
             }
         }
+        let mut declared_slots = vec![false; frame_slots];
+        for slot in declared_slots.iter_mut().take(parameter_count) {
+            *slot = true;
+        }
+        for instruction in code {
+            if let Instruction::Store(slot) = instruction {
+                declared_slots[*slot] = true;
+            }
+        }
+        if let Some(slot) = declared_slots.iter().position(|declared| !declared) {
+            return Err(format!("invalid local slot layout in '{owner}': slot {slot} is undeclared"));
+        }
         let mut depths: Vec<Option<usize>> = vec![None; code.len() + 1];
         let mut pending = vec![(0usize, 0usize)];
         while let Some((pc, depth)) = pending.pop() {
@@ -116,13 +128,13 @@ impl Vm {
             let (required, produced) = match instruction {
                 Instruction::Const(_) => (0, 1),
                 Instruction::Load(slot) => {
-                    if *slot >= frame_slots {
+                    if *slot >= frame_slots || !declared_slots[*slot] {
                         return Err(format!("invalid local slot {slot} in '{owner}'"));
                     }
                     (0, 1)
                 }
                 Instruction::Store(slot) => {
-                    if *slot >= frame_slots {
+                    if *slot >= frame_slots || !declared_slots[*slot] {
                         return Err(format!("invalid local slot {slot} in '{owner}'"));
                     }
                     (1, 0)
