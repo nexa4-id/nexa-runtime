@@ -193,7 +193,8 @@ impl Vm {
                     ));
                 }
                 let mut merged = previous_locals.clone();
-                for (slot, (previous, incoming)) in merged.iter_mut().zip(locals.iter()).enumerate() {
+                for (slot, (previous, incoming)) in merged.iter_mut().zip(locals.iter()).enumerate()
+                {
                     match (*previous, *incoming) {
                         (Some(left), Some(right)) if left != right => {
                             return Err(format!(
