@@ -217,8 +217,16 @@ impl Parser {
                 definitely_returns = self.statement()?;
             }
             self.eat(TokenKind::RBrace)?;
+            if name == "main" && return_type != ValueType::Int {
+                return Err("main function must return int".into());
+            }
             if !definitely_returns {
-                return Err(format!("function '{name}' may finish without returning {:?}", return_type));
+                if name == "main" {
+                    self.code.push(Instruction::Const(0));
+                    self.code.push(Instruction::Return);
+                } else {
+                    return Err(format!("function '{name}' may finish without returning {:?}", return_type));
+                }
             }
             let body = std::mem::take(&mut self.code);
             definitions.push(Instruction::DefineTypedFunction(name, typed_params, return_type, body));
