@@ -97,9 +97,9 @@ impl Vm {
         let mut frame_slots = parameter_count;
         for instruction in code {
             if let Instruction::Store(slot) = instruction {
-                let required_slots = slot.checked_add(1).ok_or_else(|| {
-                    format!("invalid local slot {slot} in '{owner}'")
-                })?;
+                let required_slots = slot
+                    .checked_add(1)
+                    .ok_or_else(|| format!("invalid local slot {slot} in '{owner}'"))?;
                 frame_slots = frame_slots.max(required_slots);
             }
         }
@@ -232,7 +232,9 @@ impl Vm {
                 }
                 Instruction::Store(slot) => {
                     let ty = stack.pop().ok_or_else(|| {
-                        format!("stack underflow in '{owner}' at instruction {pc}: Store needs 1 value")
+                        format!(
+                            "stack underflow in '{owner}' at instruction {pc}: Store needs 1 value"
+                        )
                     })?;
                     let local = locals.get_mut(*slot).ok_or_else(|| {
                         format!("invalid local slot {slot} in '{owner}'")
