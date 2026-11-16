@@ -159,3 +159,16 @@ mod tests {
         assert!(lex("fn main() { @ }").unwrap_err().contains("offset"));
     }
 }
+
+
+#[cfg(test)]
+mod typed_signature_tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_type_annotations_and_return_arrow() {
+        let tokens = lex("fn f(value: int, task: task) -> task {}").unwrap();
+        assert!(tokens.iter().any(|token| token.kind == TokenKind::Colon));
+        assert!(tokens.iter().any(|token| token.kind == TokenKind::Arrow));
+    }
+}
