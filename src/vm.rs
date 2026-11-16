@@ -17,6 +17,7 @@ struct FunctionSignature {
 }
 
 type Signatures = HashMap<String, FunctionSignature>;
+type VerificationState = (Vec<StackType>, Vec<Option<StackType>>);
 
 pub struct Vm {
     pool: WorkerPool,
@@ -199,7 +200,7 @@ impl Vm {
     fn validate_typed_bytecode(
         code: &[Instruction],
         initial_locals: Vec<Option<StackType>>,
-        functions: &Functions,
+        _functions: &Functions,
         signatures: &Signatures,
         owner: &str,
         return_type: StackType,
@@ -245,7 +246,7 @@ impl Vm {
         // A forward worklist computes the fixed point. Operand-stack types
         // must match exactly at merges; local initialization is intersected,
         // so a slot is usable only if every incoming path initializes it.
-        let mut states: Vec<Option<(Vec<StackType>, Vec<Option<StackType>>)>> =
+        let mut states: Vec<Option<VerificationState>> =
             vec![None; code.len() + 1];
         let mut pending = VecDeque::new();
         pending.push_back((0usize, Vec::<StackType>::new(), initial_locals));
