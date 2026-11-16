@@ -194,7 +194,9 @@ impl Parser {
             }
             self.eat(TokenKind::RBrace)?;
             if name != "main" && !definitely_returns {
-                return Err(format!("function '{name}' may finish without returning an integer"));
+                return Err(format!(
+                    "function '{name}' may finish without returning an integer"
+                ));
             }
             let mut body = std::mem::take(&mut self.code);
             body.push(Instruction::Const(0));
@@ -387,7 +389,7 @@ impl Parser {
             TokenKind::Number(value) => {
                 self.code.push(Instruction::Const(value));
                 StaticType::Int
-            },
+            }
             TokenKind::Ident(name) => {
                 if *self.kind() == TokenKind::LParen {
                     self.take();
