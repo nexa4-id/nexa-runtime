@@ -43,7 +43,9 @@ pub struct TaskHandle<T> {
 impl<T> TaskHandle<T> {
     /// Wait for the task and retrieve its result.
     pub fn wait(self) -> Result<T, TaskError> {
-        self.receiver.recv().unwrap_or(Err(TaskError::WorkerDisconnected))
+        self.receiver
+            .recv()
+            .unwrap_or(Err(TaskError::WorkerDisconnected))
     }
 }
 
@@ -85,8 +87,7 @@ impl WorkerPool {
                     while let Ok(message) = receiver.recv() {
                         match message {
                             Message::Run(job) => {
-                                let _ =
-                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+                                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
                                 pending_count.fetch_sub(1, Ordering::AcqRel);
                                 completed_count.fetch_add(1, Ordering::Relaxed);
                             }
@@ -120,11 +121,12 @@ impl WorkerPool {
         self.pending.fetch_add(1, Ordering::AcqRel);
 
         let job = Box::new(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task))
-                .map_err(|payload: Box<dyn Any + Send>| {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task)).map_err(
+                |payload: Box<dyn Any + Send>| {
                     drop(payload);
                     TaskError::Panicked
-                });
+                },
+            );
             let _ = result_sender.send(result);
         });
 
