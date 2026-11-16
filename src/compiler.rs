@@ -355,7 +355,7 @@ impl Parser {
         Ok(())
     }
     fn expression(&mut self, min_precedence: u8) -> Result<StaticType, String> {
-        match self.take() {
+        let mut expression_type = match self.take() {
             TokenKind::Number(value) => { self.code.push(Instruction::Const(value)); StaticType::Int }, 
             TokenKind::Ident(name) => {
                 if *self.kind() == TokenKind::LParen {
@@ -414,10 +414,6 @@ impl Parser {
                 }
             }
             other => return Err(format!("expected expression, got {other:?}")),
-        };
-        let mut expression_type = match self.code.last() {
-            Some(Instruction::Submit(_)) => StaticType::Task,
-            _ => StaticType::Int,
         };
         loop {
             let (precedence, op) = match self.kind() {
