@@ -1,0 +1,16 @@
+[package]
+name = "nexa-runtime"
+version = "0.3.0"
+edition = "2021"
+description = "The Nexa language runtime and native worker foundation"
+license = "MIT"
+
+[lib]
+name = "nexa_runtime"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nexa"
+path = "src/main.rs"
+
+[dependencies]
