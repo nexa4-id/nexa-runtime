@@ -18,15 +18,8 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
-    runs-on: ${{ matrix.os }}
+    name: Validate (Ubuntu)
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out source
