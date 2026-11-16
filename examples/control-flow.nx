@@ -2,16 +2,18 @@ fn sum_to(n) {
     let total = 0;
     let i = 1;
     while (i <= n) {
-        let unused = i;
         total = total + i;
         i = i + 1;
     }
     return total;
 }
+
 fn main() {
     let answer = sum_to(5);
     if (answer == 15) {
         print(answer);
+    } else if (answer > 15) {
+        print(99);
     } else {
         print(0);
     }

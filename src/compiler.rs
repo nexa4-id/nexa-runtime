@@ -1,18 +1,240 @@
-use crate::lexer::{lex,Token,TokenKind};
-#[derive(Debug,Clone)] pub enum Instruction { Const(i64),Load(usize),Store(usize),Add,Sub,Mul,Div,Eq,Ne,Lt,Le,Gt,Ge,Print,Submit(Vec<Instruction>),Wait,Jump(usize),JumpIfFalse(usize),Call(String,usize),Return,DefineFunction(String,Vec<String>,Vec<Instruction>),Halt }
-pub fn compile(source:&str)->Result<Vec<Instruction>,String>{Parser{t:lex(source)?,p:0,n:Vec::new(),c:Vec::new()}.program()}
-struct Parser{t:Vec<Token>,p:usize,n:Vec<String>,c:Vec<Instruction>}
-impl Parser{
- fn k(&self)->&TokenKind{&self.t[self.p].kind}fn take(&mut self)->TokenKind{let x=self.t[self.p].kind.clone();self.p+=1;x}fn eat(&mut self,w:TokenKind)->Result<(),String>{let x=self.take();if std::mem::discriminant(&x)==std::mem::discriminant(&w){Ok(())}else{Err(format!("expected {w:?}, got {x:?}"))}}fn ident(&mut self)->Result<String,String>{match self.take(){TokenKind::Ident(x)=>Ok(x),x=>Err(format!("expected identifier, got {x:?}"))}}
- fn program(mut self)->Result<Vec<Instruction>,String>{while *self.k()!=TokenKind::Eof{self.eat(TokenKind::Fn)?;let name=self.ident()?;self.eat(TokenKind::LParen)?;let mut params=Vec::new();if *self.k()!=TokenKind::RParen{loop{let p=self.ident()?;if params.contains(&p){return Err(format!("duplicate parameter '{p}'"));}params.push(p);if *self.k()!=TokenKind::Comma{break;}self.take();}}self.eat(TokenKind::RParen)?;self.eat(TokenKind::LBrace)?;let old_n=std::mem::take(&mut self.n);let old_c=std::mem::take(&mut self.c);self.n=params.clone();while *self.k()!=TokenKind::RBrace&&*self.k()!=TokenKind::Eof{self.stmt()?;}self.eat(TokenKind::RBrace)?;let mut body=std::mem::replace(&mut self.c,old_c);body.push(Instruction::Const(0));body.push(Instruction::Return);self.n=old_n;self.c.push(Instruction::DefineFunction(name,params,body));}if !self.c.iter().any(|i|matches!(i,Instruction::DefineFunction(n,_,_)if n=="main")){return Err("missing fn main()".into());}Ok(self.c)}
- fn block(&mut self)->Result<(),String>{self.eat(TokenKind::LBrace)?;while *self.k()!=TokenKind::RBrace&&*self.k()!=TokenKind::Eof{self.stmt()?;}self.eat(TokenKind::RBrace)}
- fn stmt(&mut self)->Result<(),String>{match self.take(){
- TokenKind::Let=>{let n=self.ident()?;if self.n.contains(&n){return Err(format!("duplicate local '{n}'"));}self.eat(TokenKind::Equal)?;self.expr(0)?;let i=self.n.len();self.n.push(n);self.c.push(Instruction::Store(i));self.eat(TokenKind::Semicolon)},
- TokenKind::Ident(n)=>{if self.take()!=TokenKind::Equal{return Err("expected '=' in assignment".into());}let i=self.n.iter().position(|v|v==&n).ok_or_else(||format!("assignment to unknown variable '{n}'"))?;self.expr(0)?;self.c.push(Instruction::Store(i));self.eat(TokenKind::Semicolon)},
- TokenKind::Print=>{self.eat(TokenKind::LParen)?;self.expr(0)?;self.eat(TokenKind::RParen)?;self.eat(TokenKind::Semicolon)?;self.c.push(Instruction::Print);Ok(())},
- TokenKind::If=>{self.eat(TokenKind::LParen)?;self.expr(0)?;self.eat(TokenKind::RParen)?;let j=self.c.len();self.c.push(Instruction::JumpIfFalse(usize::MAX));self.block()?;if *self.k()==TokenKind::Else{self.take();let end=self.c.len();self.c.push(Instruction::Jump(usize::MAX));let target=self.c.len();self.c[j]=Instruction::JumpIfFalse(target);self.block()?;let finish=self.c.len();self.c[end]=Instruction::Jump(finish);}else{let target=self.c.len();self.c[j]=Instruction::JumpIfFalse(target);}Ok(())},
- TokenKind::While=>{let start=self.c.len();self.eat(TokenKind::LParen)?;self.expr(0)?;self.eat(TokenKind::RParen)?;let exit=self.c.len();self.c.push(Instruction::JumpIfFalse(usize::MAX));self.block()?;self.c.push(Instruction::Jump(start));let end=self.c.len();self.c[exit]=Instruction::JumpIfFalse(end);Ok(())},
- TokenKind::Return=>{self.expr(0)?;self.eat(TokenKind::Semicolon)?;self.c.push(Instruction::Return);Ok(())},x=>Err(format!("unsupported statement {x:?}"))}}
- fn expr(&mut self,min:u8)->Result<(),String>{match self.take(){TokenKind::Number(v)=>self.c.push(Instruction::Const(v)),TokenKind::Ident(n)=>{if *self.k()==TokenKind::LParen{self.take();let mut argc=0;if *self.k()!=TokenKind::RParen{loop{self.expr(0)?;argc+=1;if *self.k()!=TokenKind::Comma{break;}self.take();}}self.eat(TokenKind::RParen)?;self.c.push(Instruction::Call(n,argc));}else{let i=self.n.iter().position(|v|v==&n).ok_or_else(||format!("unknown variable '{n}'"))?;self.c.push(Instruction::Load(i));}},TokenKind::LParen=>{self.expr(0)?;self.eat(TokenKind::RParen)?;},TokenKind::Worker=>{self.eat(TokenKind::Dot)?;match self.take(){TokenKind::Submit=>{self.eat(TokenKind::LBrace)?;let outer=std::mem::take(&mut self.c);self.expr(0)?;let mut body=std::mem::replace(&mut self.c,outer);body.push(Instruction::Halt);self.eat(TokenKind::RBrace)?;self.c.push(Instruction::Submit(body));},TokenKind::Wait=>{self.eat(TokenKind::LParen)?;self.expr(0)?;self.eat(TokenKind::RParen)?;self.c.push(Instruction::Wait);},x=>return Err(format!("expected submit/wait, got {x:?}"))}},x=>return Err(format!("expected expression, got {x:?}"))}
- loop{let(p,op)=match self.k(){TokenKind::EqualEqual=>(1,Some(Instruction::Eq)),TokenKind::BangEqual=>(1,Some(Instruction::Ne)),TokenKind::Less=>(1,Some(Instruction::Lt)),TokenKind::LessEqual=>(1,Some(Instruction::Le)),TokenKind::Greater=>(1,Some(Instruction::Gt)),TokenKind::GreaterEqual=>(1,Some(Instruction::Ge)),TokenKind::Plus=>(2,Some(Instruction::Add)),TokenKind::Minus=>(2,Some(Instruction::Sub)),TokenKind::Star=>(3,Some(Instruction::Mul)),TokenKind::Slash=>(3,Some(Instruction::Div)),_=>(0,None)};if p==0||p<min{break;}self.take();self.expr(p+1)?;self.c.push(op.unwrap());}Ok(())}
+use crate::lexer::{lex, Token, TokenKind};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    Const(i64), Load(usize), Store(usize), Add, Sub, Mul, Div,
+    Eq, Ne, Lt, Le, Gt, Ge, Print, Pop,
+    Submit(Vec<Instruction>), Wait, Jump(usize), JumpIfFalse(usize),
+    Call(String, usize), Return, DefineFunction(String, Vec<String>, Vec<Instruction>), Halt,
+}
+
+pub fn compile(source: &str) -> Result<Vec<Instruction>, String> {
+    Parser { tokens: lex(source)?, pos: 0, locals: Vec::new(), scopes: Vec::new(),
+        code: Vec::new(), loops: Vec::new() }.program()
+}
+
+struct Parser {
+    tokens: Vec<Token>, pos: usize, locals: Vec<String>, scopes: Vec<Vec<String>>,
+    code: Vec<Instruction>, loops: Vec<Vec<usize>>,
+}
+
+impl Parser {
+    fn kind(&self) -> &TokenKind { &self.tokens[self.pos].kind }
+    fn take(&mut self) -> TokenKind { let kind = self.tokens[self.pos].kind.clone(); self.pos += 1; kind }
+    fn eat(&mut self, expected: TokenKind) -> Result<(), String> {
+        let actual = self.take();
+        if std::mem::discriminant(&actual) == std::mem::discriminant(&expected) { Ok(()) }
+        else { Err(format!("expected {expected:?}, got {actual:?}")) }
+    }
+    fn ident(&mut self) -> Result<String, String> {
+        match self.take() { TokenKind::Ident(name) => Ok(name), other => Err(format!("expected identifier, got {other:?}")) }
+    }
+    fn lookup(&self, name: &str) -> Option<usize> { self.locals.iter().rposition(|local| local == name) }
+    fn enter_scope(&mut self) { self.scopes.push(Vec::new()); }
+    fn leave_scope(&mut self) {
+        if let Some(names) = self.scopes.pop() {
+            for name in names.into_iter().rev() {
+                if self.locals.last() == Some(&name) { self.locals.pop(); }
+            }
+        }
+    }
+    fn declare(&mut self, name: String) -> Result<usize, String> {
+        let scope = self.scopes.last_mut().ok_or("internal compiler error: missing scope")?;
+        if scope.contains(&name) { return Err(format!("duplicate local '{name}' in the same scope")); }
+        let slot = self.locals.len();
+        scope.push(name.clone());
+        self.locals.push(name);
+        Ok(slot)
+    }
+    fn program(mut self) -> Result<Vec<Instruction>, String> {
+        let mut functions: HashMap<String, usize> = HashMap::new();
+        let mut definitions = Vec::new();
+        while *self.kind() != TokenKind::Eof {
+            self.eat(TokenKind::Fn)?;
+            let name = self.ident()?;
+            self.eat(TokenKind::LParen)?;
+            let mut params = Vec::new();
+            if *self.kind() != TokenKind::RParen {
+                loop {
+                    let param = self.ident()?;
+                    if params.contains(&param) { return Err(format!("duplicate parameter '{param}' in function '{name}'")); }
+                    params.push(param);
+                    if *self.kind() != TokenKind::Comma { break; }
+                    self.take();
+                }
+            }
+            self.eat(TokenKind::RParen)?;
+            self.eat(TokenKind::LBrace)?;
+            if functions.insert(name.clone(), params.len()).is_some() { return Err(format!("duplicate function '{name}'")); }
+            self.locals = params.clone();
+            self.scopes = vec![params.clone()];
+            self.code.clear();
+            self.loops.clear();
+            while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof { self.statement()?; }
+            self.eat(TokenKind::RBrace)?;
+            let mut body = std::mem::take(&mut self.code);
+            body.push(Instruction::Const(0));
+            body.push(Instruction::Return);
+            definitions.push(Instruction::DefineFunction(name, params, body));
+            self.locals.clear();
+            self.scopes.clear();
+        }
+        if !functions.contains_key("main") { return Err("missing fn main()".into()); }
+        if functions["main"] != 0 { return Err("main function must not take parameters".into()); }
+        for definition in &definitions {
+            if let Instruction::DefineFunction(name, _, body) = definition {
+                Self::validate_calls(body, &functions, name)?;
+            }
+        }
+        Ok(definitions)
+    }
+    fn validate_calls(code: &[Instruction], functions: &HashMap<String, usize>, owner: &str) -> Result<(), String> {
+        for instruction in code {
+            match instruction {
+                Instruction::Call(name, argc) => {
+                    let expected = functions.get(name).ok_or_else(|| format!("function '{owner}' calls unknown function '{name}'"))?;
+                    if expected != argc { return Err(format!("function '{name}' expects {expected} argument(s), got {argc}")); }
+                }
+                Instruction::Submit(body) => Self::validate_calls(body, functions, owner)?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    fn block(&mut self) -> Result<(), String> {
+        self.eat(TokenKind::LBrace)?;
+        self.enter_scope();
+        while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof { self.statement()?; }
+        self.eat(TokenKind::RBrace)?;
+        self.leave_scope();
+        Ok(())
+    }
+    fn statement(&mut self) -> Result<(), String> {
+        match self.take() {
+            TokenKind::Let => {
+                let name = self.ident()?;
+                self.eat(TokenKind::Equal)?;
+                self.expression(0)?;
+                let slot = self.declare(name)?;
+                self.code.push(Instruction::Store(slot));
+                self.eat(TokenKind::Semicolon)
+            }
+            TokenKind::Ident(name) => {
+                self.eat(TokenKind::Equal)?;
+                let slot = self.lookup(&name).ok_or_else(|| format!("assignment to unknown variable '{name}'"))?;
+                self.expression(0)?;
+                self.code.push(Instruction::Store(slot));
+                self.eat(TokenKind::Semicolon)
+            }
+            TokenKind::Print => {
+                self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
+                self.eat(TokenKind::Semicolon)?; self.code.push(Instruction::Print); Ok(())
+            }
+            TokenKind::If => self.if_statement(),
+            TokenKind::While => self.while_statement(),
+            TokenKind::Break => {
+                self.eat(TokenKind::Semicolon)?;
+                let jumps = self.loops.last_mut().ok_or("'break' used outside a loop")?;
+                jumps.push(self.code.len()); self.code.push(Instruction::Jump(usize::MAX)); Ok(())
+            }
+            TokenKind::Continue => {
+                self.eat(TokenKind::Semicolon)?;
+                let jumps = self.loops.last_mut().ok_or("'continue' used outside a loop")?;
+                jumps.push(usize::MAX - self.code.len()); self.code.push(Instruction::Jump(usize::MAX)); Ok(())
+            }
+            TokenKind::Return => {
+                self.expression(0)?; self.eat(TokenKind::Semicolon)?;
+                self.code.push(Instruction::Return); Ok(())
+            }
+            other => Err(format!("unsupported statement {other:?}")),
+        }
+    }
+    fn if_statement(&mut self) -> Result<(), String> {
+        self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
+        let branch = self.code.len(); self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        self.block()?;
+        if *self.kind() == TokenKind::Else {
+            self.take();
+            let end_jump = self.code.len(); self.code.push(Instruction::Jump(usize::MAX));
+            let else_start = self.code.len();
+            self.code[branch] = Instruction::JumpIfFalse(else_start);
+            if *self.kind() == TokenKind::If { self.take(); self.if_statement()?; } else { self.block()?; }
+            let end = self.code.len(); self.code[end_jump] = Instruction::Jump(end);
+        } else {
+            let end = self.code.len(); self.code[branch] = Instruction::JumpIfFalse(end);
+        }
+        Ok(())
+    }
+    fn while_statement(&mut self) -> Result<(), String> {
+        let condition = self.code.len();
+        self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
+        let exit = self.code.len(); self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        self.loops.push(Vec::new());
+        self.block()?;
+        self.code.push(Instruction::Jump(condition));
+        let end = self.code.len();
+        self.code[exit] = Instruction::JumpIfFalse(end);
+        for encoded in self.loops.pop().unwrap_or_default() {
+            if encoded == usize::MAX { continue; }
+            if encoded > usize::MAX / 2 {
+                let at = usize::MAX - encoded;
+                self.code[at] = Instruction::Jump(condition);
+            } else {
+                self.code[encoded] = Instruction::Jump(end);
+            }
+        }
+        Ok(())
+    }
+    fn expression(&mut self, min_precedence: u8) -> Result<(), String> {
+        match self.take() {
+            TokenKind::Number(value) => self.code.push(Instruction::Const(value)),
+            TokenKind::Ident(name) => {
+                if *self.kind() == TokenKind::LParen {
+                    self.take(); let mut argc = 0;
+                    if *self.kind() != TokenKind::RParen {
+                        loop { self.expression(0)?; argc += 1; if *self.kind() != TokenKind::Comma { break; } self.take(); }
+                    }
+                    self.eat(TokenKind::RParen)?; self.code.push(Instruction::Call(name, argc));
+                } else {
+                    let slot = self.lookup(&name).ok_or_else(|| format!("unknown variable '{name}'"))?;
+                    self.code.push(Instruction::Load(slot));
+                }
+            }
+            TokenKind::LParen => { self.expression(0)?; self.eat(TokenKind::RParen)?; }
+            TokenKind::Worker => {
+                self.eat(TokenKind::Dot)?;
+                match self.take() {
+                    TokenKind::Submit => {
+                        self.eat(TokenKind::LBrace)?;
+                        let outer_code = std::mem::take(&mut self.code);
+                        self.expression(0)?;
+                        let mut task_code = std::mem::replace(&mut self.code, outer_code);
+                        task_code.push(Instruction::Halt);
+                        self.eat(TokenKind::RBrace)?;
+                        self.code.push(Instruction::Submit(task_code));
+                    }
+                    TokenKind::Wait => {
+                        self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
+                        self.code.push(Instruction::Wait);
+                    }
+                    other => return Err(format!("expected submit or wait, got {other:?}")),
+                }
+            }
+            other => return Err(format!("expected expression, got {other:?}")),
+        }
+        loop {
+            let (precedence, op) = match self.kind() {
+                TokenKind::EqualEqual => (1, Some(Instruction::Eq)), TokenKind::BangEqual => (1, Some(Instruction::Ne)),
+                TokenKind::Less => (1, Some(Instruction::Lt)), TokenKind::LessEqual => (1, Some(Instruction::Le)),
+                TokenKind::Greater => (1, Some(Instruction::Gt)), TokenKind::GreaterEqual => (1, Some(Instruction::Ge)),
+                TokenKind::Plus => (2, Some(Instruction::Add)), TokenKind::Minus => (2, Some(Instruction::Sub)),
+                TokenKind::Star => (3, Some(Instruction::Mul)), TokenKind::Slash => (3, Some(Instruction::Div)),
+                _ => (0, None),
+            };
+            if precedence == 0 || precedence < min_precedence { break; }
+            self.take(); self.expression(precedence + 1)?; self.code.push(op.expect("operator was matched"));
+        }
+        Ok(())
+    }
 }
