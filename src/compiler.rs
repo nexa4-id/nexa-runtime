@@ -651,7 +651,9 @@ impl Parser {
                     let ty = self.local_types[slot];
                     if ty == StaticType::Task {
                         if self.task_moved[slot] {
-                            return Err(format!("use of moved or already-consumed task handle '{name}'"));
+                            return Err(format!(
+                                "use of moved or already-consumed task handle '{name}'"
+                            ));
                         }
                         self.task_moved[slot] = true;
                     }
