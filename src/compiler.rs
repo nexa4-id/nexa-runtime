@@ -39,7 +39,12 @@ pub enum Instruction {
     Call(String, usize),
     Return,
     DefineFunction(String, Vec<String>, Vec<Instruction>),
-    DefineTypedFunction(String, Vec<(String, ValueType)>, ValueType, Vec<Instruction>),
+    DefineTypedFunction(
+        String,
+        Vec<(String, ValueType)>,
+        ValueType,
+        Vec<Instruction>,
+    ),
     Halt,
 }
 
@@ -187,22 +192,41 @@ impl Parser {
                 loop {
                     let param = self.ident()?;
                     if params.contains(&param) {
-                        return Err(format!("duplicate parameter '{param}' in function '{name}'"));
+                        return Err(format!(
+                            "duplicate parameter '{param}' in function '{name}'"
+                        ));
                     }
-                    let ty = if *self.kind() == TokenKind::Colon { self.take(); self.value_type()? } else { ValueType::Int };
+                    let ty = if *self.kind() == TokenKind::Colon {
+                        self.take();
+                        self.value_type()?
+                    } else {
+                        ValueType::Int
+                    };
                     params.push(param.clone());
                     typed_params.push((param, ty));
-                    if *self.kind() != TokenKind::Comma { break; }
+                    if *self.kind() != TokenKind::Comma {
+                        break;
+                    }
                     self.take();
                 }
             }
             self.eat(TokenKind::RParen)?;
-            let return_type = if *self.kind() == TokenKind::Arrow { self.take(); self.value_type()? } else { ValueType::Int };
-            let function_type = self.function_types.get(&name)
-                .ok_or_else(|| format!("internal compiler error: missing signature for '{name}'"))?;
-            if function_type.parameters != typed_params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>()
-                || function_type.returns != return_type {
-                return Err(format!("signature for function '{name}' changed during compilation"));
+            let return_type = if *self.kind() == TokenKind::Arrow {
+                self.take();
+                self.value_type()?
+            } else {
+                ValueType::Int
+            };
+            let function_type = self.function_types.get(&name).ok_or_else(|| {
+                format!("internal compiler error: missing signature for '{name}'")
+            })?;
+            if function_type.parameters
+                != typed_params.iter().map(|(_, ty)| *ty).collect::<Vec<_>>()
+                || function_type.returns != return_type
+            {
+                return Err(format!(
+                    "signature for function '{name}' changed during compilation"
+                ));
             }
             self.eat(TokenKind::LBrace)?;
             self.locals = params.clone();
@@ -213,7 +237,9 @@ impl Parser {
             self.loops.clear();
             let mut definitely_returns = false;
             while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof {
-                if definitely_returns { return Err(format!("unreachable statement in function '{name}'")); }
+                if definitely_returns {
+                    return Err(format!("unreachable statement in function '{name}'"));
+                }
                 definitely_returns = self.statement()?;
             }
             self.eat(TokenKind::RBrace)?;
@@ -225,17 +251,33 @@ impl Parser {
                     self.code.push(Instruction::Const(0));
                     self.code.push(Instruction::Return);
                 } else {
-                    return Err(format!("function '{name}' may finish without returning {:?}", return_type));
+                    return Err(format!(
+                        "function '{name}' may finish without returning {:?}",
+                        return_type
+                    ));
                 }
             }
             let body = std::mem::take(&mut self.code);
-            definitions.push(Instruction::DefineTypedFunction(name, typed_params, return_type, body));
+            definitions.push(Instruction::DefineTypedFunction(
+                name,
+                typed_params,
+                return_type,
+                body,
+            ));
             self.locals.clear();
             self.local_types.clear();
             self.scopes.clear();
         }
-        if !self.function_types.contains_key("main") { return Err("missing fn main()".into()); }
-        if !self.function_types.get("main").unwrap().parameters.is_empty() {
+        if !self.function_types.contains_key("main") {
+            return Err("missing fn main()".into());
+        }
+        if !self
+            .function_types
+            .get("main")
+            .unwrap()
+            .parameters
+            .is_empty()
+        {
             return Err("main function must not take parameters".into());
         }
         for definition in &definitions {
@@ -251,19 +293,36 @@ impl Parser {
         let mut pos = 0usize;
         let take_type = |tokens: &[Token], pos: &mut usize| -> Result<ValueType, String> {
             match tokens.get(*pos).map(|t| &t.kind) {
-                Some(TokenKind::Ident(name)) if name == "int" => { *pos += 1; Ok(ValueType::Int) }
-                Some(TokenKind::Ident(name)) if name == "task" => { *pos += 1; Ok(ValueType::Task) }
+                Some(TokenKind::Ident(name)) if name == "int" => {
+                    *pos += 1;
+                    Ok(ValueType::Int)
+                }
+                Some(TokenKind::Ident(name)) if name == "task" => {
+                    *pos += 1;
+                    Ok(ValueType::Task)
+                }
                 other => Err(format!("expected type 'int' or 'task', got {other:?}")),
             }
         };
-        while !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Eof) | None) {
-            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Fn)) { return Err("expected function declaration".into()); }
+        while !matches!(
+            tokens.get(pos).map(|t| &t.kind),
+            Some(TokenKind::Eof) | None
+        ) {
+            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Fn)) {
+                return Err("expected function declaration".into());
+            }
             pos += 1;
             let name = match tokens.get(pos).map(|t| &t.kind) {
-                Some(TokenKind::Ident(name)) => { let n=name.clone(); pos+=1; n }
+                Some(TokenKind::Ident(name)) => {
+                    let n = name.clone();
+                    pos += 1;
+                    n
+                }
                 other => return Err(format!("expected function name, got {other:?}")),
             };
-            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::LParen)) { return Err(format!("expected '(' after function '{name}'")); }
+            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::LParen)) {
+                return Err(format!("expected '(' after function '{name}'"));
+            }
             pos += 1;
             let mut parameters = Vec::new();
             if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::RParen)) {
@@ -272,26 +331,57 @@ impl Parser {
                         Some(TokenKind::Ident(_)) => pos += 1,
                         other => return Err(format!("expected parameter name, got {other:?}")),
                     }
-                    let ty = if matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Colon)) { pos+=1; take_type(tokens,&mut pos)? } else { ValueType::Int };
+                    let ty = if matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Colon)) {
+                        pos += 1;
+                        take_type(tokens, &mut pos)?
+                    } else {
+                        ValueType::Int
+                    };
                     parameters.push(ty);
-                    if matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Comma)) { pos+=1; } else { break; }
+                    if matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Comma)) {
+                        pos += 1;
+                    } else {
+                        break;
+                    }
                 }
             }
-            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::RParen)) { return Err(format!("expected ')' in function '{name}'")); }
+            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::RParen)) {
+                return Err(format!("expected ')' in function '{name}'"));
+            }
             pos += 1;
-            let returns = if matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Arrow)) { pos+=1; take_type(tokens,&mut pos)? } else { ValueType::Int };
-            if result.insert(name.clone(), FunctionType { parameters, returns }).is_some() { return Err(format!("duplicate function '{name}'")); }
-            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::LBrace)) { return Err(format!("expected function body for '{name}'")); }
+            let returns = if matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::Arrow)) {
+                pos += 1;
+                take_type(tokens, &mut pos)?
+            } else {
+                ValueType::Int
+            };
+            if result
+                .insert(
+                    name.clone(),
+                    FunctionType {
+                        parameters,
+                        returns,
+                    },
+                )
+                .is_some()
+            {
+                return Err(format!("duplicate function '{name}'"));
+            }
+            if !matches!(tokens.get(pos).map(|t| &t.kind), Some(TokenKind::LBrace)) {
+                return Err(format!("expected function body for '{name}'"));
+            }
             pos += 1;
-            let mut depth=1usize;
-            while depth>0 {
+            let mut depth = 1usize;
+            while depth > 0 {
                 match tokens.get(pos).map(|t| &t.kind) {
-                    Some(TokenKind::LBrace)=>depth+=1,
-                    Some(TokenKind::RBrace)=>depth-=1,
-                    Some(TokenKind::Eof)|None=>return Err(format!("unterminated body for '{name}'")),
-                    _=>{}
+                    Some(TokenKind::LBrace) => depth += 1,
+                    Some(TokenKind::RBrace) => depth -= 1,
+                    Some(TokenKind::Eof) | None => {
+                        return Err(format!("unterminated body for '{name}'"))
+                    }
+                    _ => {}
                 }
-                pos+=1;
+                pos += 1;
             }
         }
         Ok(result)
@@ -309,7 +399,8 @@ impl Parser {
                     })?;
                     if expected.parameters.len() != *argc {
                         return Err(format!(
-                            "function '{name}' expects {} argument(s), got {argc}", expected.parameters.len()
+                            "function '{name}' expects {} argument(s), got {argc}",
+                            expected.parameters.len()
                         ));
                     }
                 }
@@ -393,7 +484,10 @@ impl Parser {
             TokenKind::Return => {
                 let ty = self.expression(0)?;
                 if ty != self.current_return_type {
-                    return Err(format!("return type mismatch: function expects {:?}, got {ty:?}", self.current_return_type));
+                    return Err(format!(
+                        "return type mismatch: function expects {:?}, got {ty:?}",
+                        self.current_return_type
+                    ));
                 }
                 self.eat(TokenKind::Semicolon)?;
                 self.code.push(Instruction::Return);
@@ -491,10 +585,14 @@ impl Parser {
                     if *self.kind() != TokenKind::RParen {
                         loop {
                             let arg_type = self.expression(0)?;
-                            let expected = self.function_types.get(&name)
+                            let expected = self
+                                .function_types
+                                .get(&name)
                                 .and_then(|signature| signature.parameters.get(argc))
                                 .copied()
-                                .ok_or_else(|| format!("unknown function '{name}' or too many arguments"))?;
+                                .ok_or_else(|| {
+                                    format!("unknown function '{name}' or too many arguments")
+                                })?;
                             if arg_type != expected {
                                 return Err(format!("function '{name}' argument {} expects {expected:?}, got {arg_type:?}", argc + 1));
                             }
@@ -506,10 +604,15 @@ impl Parser {
                         }
                     }
                     self.eat(TokenKind::RParen)?;
-                    let signature = self.function_types.get(&name)
+                    let signature = self
+                        .function_types
+                        .get(&name)
                         .ok_or_else(|| format!("unknown function '{name}'"))?;
                     if signature.parameters.len() != argc {
-                        return Err(format!("function '{name}' expects {} argument(s), got {argc}", signature.parameters.len()));
+                        return Err(format!(
+                            "function '{name}' expects {} argument(s), got {argc}",
+                            signature.parameters.len()
+                        ));
                     }
                     let result_type = signature.returns;
                     self.code.push(Instruction::Call(name, argc));
@@ -539,7 +642,9 @@ impl Parser {
                         }
                         let mut task_code = std::mem::replace(&mut self.code, outer_code);
                         if let Some(slot) = Self::task_capture_slot(&task_code, &self.local_types) {
-                            return Err(format!("worker.submit cannot capture task handle in local slot {slot}"));
+                            return Err(format!(
+                                "worker.submit cannot capture task handle in local slot {slot}"
+                            ));
                         }
                         task_code.push(Instruction::Halt);
                         self.eat(TokenKind::RBrace)?;
