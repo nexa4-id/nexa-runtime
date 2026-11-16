@@ -30,3 +30,8 @@ The language's user-visible values are intentionally integer-only; task handles 
 ## Validation
 
 `cargo fmt --all -- --check`, `cargo check --all-targets`, `cargo test --all-targets`, and `cargo clippy --all-targets -- -D warnings` run in the GitHub Actions matrix on Linux, Windows, and macOS.
+
+
+### Type-aware bytecode verification
+
+Before execution, the VM performs a control-flow data-flow pass over operand-stack and local-slot types. The verifier distinguishes integer values from worker task handles, checks that arithmetic, comparisons, conditions, printing, function arguments, and returns use integers, and requires `worker.wait` to consume a task handle. Branch merges must agree on operand-stack types and cannot merge conflicting initialized local types. Worker bytecode is checked using the captured local type state.
