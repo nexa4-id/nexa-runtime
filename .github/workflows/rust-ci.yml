@@ -1,17 +1,23 @@
-name: Rust CI
+name: Nexa Rust CI
 
 on:
   push:
     branches:
       - develop/v0.3
     paths:
-      - "nexa-runtime-v0.2.zip"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "tests/**"
       - ".github/workflows/rust-ci.yml"
   pull_request:
     branches:
       - develop/v0.3
     paths:
-      - "nexa-runtime-v0.2.zip"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "tests/**"
       - ".github/workflows/rust-ci.yml"
   workflow_dispatch:
 
@@ -19,45 +25,34 @@ permissions:
   contents: read
 
 concurrency:
-  group: rust-ci-${{ github.ref }}
+  group: nexa-rust-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
-    name: Format, check, test, and lint
+    name: Format, build, test, and lint
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out repository
+      - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install stable Rust toolchain
+      - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Verify and extract v0.2 source archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f nexa-runtime-v0.2.zip
-          unzip -t nexa-runtime-v0.2.zip
-          mkdir -p .ci-src
-          unzip -q nexa-runtime-v0.2.zip -d .ci-src
-          test -f .ci-src/nexa-runtime-v0.2/Cargo.toml
-
       - name: Check formatting
-        working-directory: .ci-src/nexa-runtime-v0.2
         run: cargo fmt --all -- --check
 
       - name: Check all targets
-        working-directory: .ci-src/nexa-runtime-v0.2
         run: cargo check --all-targets
 
       - name: Run tests
-        working-directory: .ci-src/nexa-runtime-v0.2
         run: cargo test --all-targets
 
       - name: Run Clippy
-        working-directory: .ci-src/nexa-runtime-v0.2
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build release binary
+        run: cargo build --release
