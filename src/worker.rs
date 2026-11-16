@@ -1,9 +1,9 @@
-//! Safe, dependency-free native worker pool.
+//! Safe, dependency-free native worker pool with one queue per worker.
 
 use std::any::Any;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
@@ -26,7 +26,9 @@ impl fmt::Display for TaskError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Panicked => formatter.write_str("worker task panicked"),
-            Self::WorkerDisconnected => formatter.write_str("worker disconnected before returning a result"),
+            Self::WorkerDisconnected => {
+                formatter.write_str("worker disconnected before returning a result")
+            }
         }
     }
 }
@@ -54,8 +56,9 @@ pub struct WorkerStats {
 
 /// A fixed-size pool of native worker threads.
 pub struct WorkerPool {
-    sender: mpsc::Sender<Message>,
+    senders: Vec<mpsc::Sender<Message>>,
     threads: Vec<JoinHandle<()>>,
+    next_worker: AtomicUsize,
     submitted: Arc<AtomicUsize>,
     completed: Arc<AtomicUsize>,
     pending: Arc<AtomicUsize>,
@@ -65,45 +68,41 @@ impl WorkerPool {
     /// Create a pool. A zero-sized request is normalized to one worker.
     pub fn new(worker_count: usize) -> Self {
         let worker_count = worker_count.max(1);
-        let (sender, receiver) = mpsc::channel::<Message>();
-        let receiver = Arc::new(Mutex::new(receiver));
         let submitted = Arc::new(AtomicUsize::new(0));
         let completed = Arc::new(AtomicUsize::new(0));
         let pending = Arc::new(AtomicUsize::new(0));
+        let mut senders = Vec::with_capacity(worker_count);
         let mut threads = Vec::with_capacity(worker_count);
 
         for index in 0..worker_count {
-            let receiver = Arc::clone(&receiver);
+            let (sender, receiver) = mpsc::channel::<Message>();
             let completed_count = Arc::clone(&completed);
             let pending_count = Arc::clone(&pending);
             let name = format!("nexa-worker-{index}");
             let handle = thread::Builder::new()
                 .name(name)
-                .spawn(move || loop {
-                    let message = {
-                        let guard = match receiver.lock() {
-                            Ok(guard) => guard,
-                            Err(_) => return,
-                        };
-                        guard.recv()
-                    };
-
-                    match message {
-                        Ok(Message::Run(job)) => {
-                            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
-                            pending_count.fetch_sub(1, Ordering::AcqRel);
-                            completed_count.fetch_add(1, Ordering::Relaxed);
+                .spawn(move || {
+                    while let Ok(message) = receiver.recv() {
+                        match message {
+                            Message::Run(job) => {
+                                let _ =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+                                pending_count.fetch_sub(1, Ordering::AcqRel);
+                                completed_count.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Message::Shutdown => break,
                         }
-                        Ok(Message::Shutdown) | Err(_) => break,
                     }
                 })
                 .expect("failed to spawn Nexa worker thread");
+            senders.push(sender);
             threads.push(handle);
         }
 
         Self {
-            sender,
+            senders,
             threads,
+            next_worker: AtomicUsize::new(0),
             submitted,
             completed,
             pending,
@@ -129,7 +128,8 @@ impl WorkerPool {
             let _ = result_sender.send(result);
         });
 
-        if self.sender.send(Message::Run(job)).is_err() {
+        let worker = self.next_worker.fetch_add(1, Ordering::Relaxed) % self.senders.len();
+        if self.senders[worker].send(Message::Run(job)).is_err() {
             self.pending.fetch_sub(1, Ordering::AcqRel);
         }
 
@@ -153,8 +153,8 @@ impl WorkerPool {
 
 impl Drop for WorkerPool {
     fn drop(&mut self) {
-        for _ in 0..self.threads.len() {
-            let _ = self.sender.send(Message::Shutdown);
+        for sender in &self.senders {
+            let _ = sender.send(Message::Shutdown);
         }
         for handle in self.threads.drain(..) {
             let _ = handle.join();
