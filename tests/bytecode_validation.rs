@@ -108,7 +108,7 @@ fn verifier_rejects_return_with_wrong_stack_depth() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("requires exactly one stack value"), "{error}");
+    assert!(error.contains("requires exactly one Int value"), "{error}");
 }
 
 #[test]
