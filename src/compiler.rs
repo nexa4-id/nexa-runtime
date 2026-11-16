@@ -29,15 +29,46 @@ pub enum Instruction {
 }
 
 pub fn compile(source: &str) -> Result<Vec<Instruction>, String> {
-    Parser {
-        tokens: lex(source)?,
+    let tokens = lex(source).map_err(|message| locate_error(source, &message))?;
+    let mut parser = Parser {
+        tokens,
         pos: 0,
         locals: Vec::new(),
         scopes: Vec::new(),
         code: Vec::new(),
         loops: Vec::new(),
+    };
+    parser
+        .program()
+        .map_err(|message| parser.diagnostic(source, &message))
+}
+
+fn locate_error(source: &str, message: &str) -> String {
+    let offset = message
+        .split_whitespace()
+        .last()
+        .and_then(|part| part.parse::<usize>().ok());
+    match offset {
+        Some(offset) => {
+            let (line, column) = line_column(source, offset);
+            format!("{message} (line {line}, column {column})")
+        }
+        None => message.to_string(),
     }
-    .program()
+}
+
+fn line_column(source: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut column = 1;
+    for ch in source.chars().take(offset) {
+        if ch == '\\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    (line, column)
 }
 
 struct Parser {
@@ -50,6 +81,16 @@ struct Parser {
 }
 
 impl Parser {
+    fn diagnostic(&self, source: &str, message: &str) -> String {
+        let offset = self.tokens
+            .get(self.pos.saturating_sub(1))
+            .or_else(|| self.tokens.get(self.pos))
+            .map(|token| token.offset)
+            .unwrap_or_else(|| source.chars().count());
+        let (line, column) = line_column(source, offset);
+        format!("{message} (line {line}, column {column})")
+    }
+
     fn kind(&self) -> &TokenKind {
         &self.tokens[self.pos].kind
     }
@@ -100,7 +141,7 @@ impl Parser {
         self.locals.push(name);
         Ok(slot)
     }
-    fn program(mut self) -> Result<Vec<Instruction>, String> {
+    fn program(&mut self) -> Result<Vec<Instruction>, String> {
         let mut functions: HashMap<String, usize> = HashMap::new();
         let mut definitions = Vec::new();
         while *self.kind() != TokenKind::Eof {
