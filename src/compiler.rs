@@ -441,7 +441,7 @@ impl Parser {
                 self.eat(TokenKind::Semicolon)?;
                 Ok(false)
             }
-            TokenKind::Ident(name) if *self.kind() == TokenKind::LParen => {
+            TokenKind::Ident(_) if *self.kind() == TokenKind::LParen => {
                 self.pos -= 1;
                 let ty = self.expression(0)?;
                 if ty == StaticType::Task {
