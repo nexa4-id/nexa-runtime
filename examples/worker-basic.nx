@@ -1,0 +1,8 @@
+fn main() {
+    let base = 21;
+    let task = worker.submit {
+        base * 2
+    };
+    let result = worker.wait(task);
+    print(result);
+}

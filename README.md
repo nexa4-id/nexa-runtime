@@ -1,60 +1,22 @@
-# Nexa Runtime
+# Nexa 0.3
 
-Nexa is a Rust-inspired language and runtime project. This repository is being
-rebuilt as a normal Rust crate; source code is tracked directly instead of
-being hidden inside uploaded ZIP archives.
+A small Rust-hosted language runtime. This milestone adds a lexer, expression parser/compiler, stack VM, and language-level native worker submission/wait.
 
-## Current bootstrap scope
+## Run
 
-This clean baseline provides a safe-Rust native worker pool:
+```sh
+cargo run -- run examples/worker-basic.nx --workers 4
+```
 
-- fixed-size worker threads;
-- channel-based task dispatch;
-- task result delivery;
-- panic isolation at the task boundary;
-- orderly worker shutdown;
-- unit and integration smoke tests.
+Expected output: `42`.
 
-The Nexa lexer, parser, compiler, bytecode VM, language-level worker submit/wait
-syntax, and the nexa run command are not implemented in this bootstrap commit.
-They remain the next development milestones; this README deliberately does not
-claim otherwise.
+## Validate
 
-## Requirements
+```sh
+cargo fmt --all -- --check
+cargo check --all-targets
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
+```
 
-- Rust stable toolchain (rustfmt and clippy components)
-- Cargo
-
-## Build and verify
-
-    cargo fmt --all -- --check
-    cargo check --all-targets
-    cargo test --all-targets
-    cargo clippy --all-targets -- -D warnings
-
-## Run the native worker smoke demo
-
-    cargo run -- worker-demo
-    cargo run -- worker-demo 4
-
-Both commands are intended to print 42.
-
-## Project layout
-
-    .
-    ├── .github/workflows/ci.yml
-    ├── examples/worker_demo.rs
-    ├── src/
-    │   ├── lib.rs
-    │   ├── main.rs
-    │   └── worker.rs
-    ├── tests/runtime_smoke.rs
-    ├── Cargo.toml
-    └── rust-toolchain.toml
-
-## Development policy
-
-- Keep the default branch stable; feature work belongs on a development branch.
-- Prefer safe Rust and the standard library until benchmarks justify dependencies.
-- Report test and benchmark results only when they were actually run.
-- Do not claim language-level worker integration until compiler/runtime tests cover it.
+Supported language subset: `fn main() { ... }`, integer `let` bindings, `print(expr)`, integer arithmetic, `worker.submit { expr }`, and `worker.wait(task)`. Worker blocks capture currently defined integer locals by value at submission time. Handles are single-use. The parser/compiler and VM are intentionally small; functions, strings, types, modules, and general control flow are not implemented yet.
