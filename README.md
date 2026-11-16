@@ -13,7 +13,7 @@ Expected output for `worker-basic.nx` is `42`; expected output for `control-flow
 
 ## Language subset
 
-- Functions: `fn name(params) { ... }`, positional integer arguments, calls, `return expression;`, and recursion.
+- Functions: `fn name(value: int) -> int { ... }` and `fn name(task: task) -> task { ... }`, positional typed arguments, typed returns, calls, and recursion. Unannotated legacy signatures remain integer-typed; `main` defaults to `int` and may fall through with an implicit zero return.
 - Locals: inferred integer values and task handles, reassignment with stable inferred types, lexical block scopes, and nested shadowing.
 - Branching: `if`, `else if`, and `else`.
 - Loops: `while`, `break`, and `continue`.
@@ -25,7 +25,7 @@ Expected output for `worker-basic.nx` is `42`; expected output for `control-flow
 
 ## Current limitations
 
-The language's user-visible values are intentionally integer-only; task handles have an internal inferred type and cannot be printed, used in arithmetic, or passed as integer arguments. There are no strings, booleans as a separate type, explicit type annotations, closures, modules, structs, exceptions, or break-values. Conditions use zero as false and non-zero as true. Worker task failures are surfaced through `worker.wait`. The current worker implementation creates a small nested pool for worker tasks that themselves execute nested worker operations; this is correct for the supported subset but is a future optimization target.
+The language's computed values are integers and task handles. Function signatures support `int` and `task` parameters and return values; task handles cannot be printed or used in arithmetic, and `worker.wait` consumes them at runtime. There are no strings, booleans as a separate type, explicit type annotations, closures, modules, structs, exceptions, or break-values. Conditions use zero as false and non-zero as true. Worker task failures are surfaced through `worker.wait`. The current worker implementation creates a small nested pool for worker tasks that themselves execute nested worker operations; this is correct for the supported subset but is a future optimization target.
 
 ## Validation
 
@@ -38,3 +38,24 @@ Before execution, the VM performs a control-flow data-flow pass over operand-sta
 
 
 Function bytecode must terminate every reachable path with `Return` and leave exactly one integer matching its declared return signature. Worker blocks use a separate contract: every reachable path must terminate with `Halt` and leave exactly one integer result. Falling through either body, using the other terminator, duplicate parameter names, or calling a function with mismatched argument types is rejected before execution.
+
+
+### Typed function signatures
+
+Function parameters use `name: int` or `name: task`, and an optional explicit return annotation follows `->`. For example:
+
+```rust
+fn make_task() -> task {
+    return worker.submit { 21 * 2 };
+}
+
+fn wait_task(task: task) -> int {
+    return worker.wait(task);
+}
+
+fn main() {
+    print(wait_task(make_task()));
+}
+```
+
+The compiler pre-collects signatures before compiling bodies, so forward calls and recursion are type-checked. The VM independently reconstructs the signatures from bytecode and verifies argument types, parameter slots, return types, and task-handle use before execution. Legacy unannotated parameters and return values default to `int`.
