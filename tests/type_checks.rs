@@ -61,7 +61,7 @@ fn task_handles_are_rejected_in_conditions_and_function_arguments() {
     )
     .unwrap_err();
     assert!(
-        argument.contains("function arguments must be integers"),
+        argument.contains("expects Int"),
         "{argument}"
     );
 }
