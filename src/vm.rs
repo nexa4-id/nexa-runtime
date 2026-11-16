@@ -266,6 +266,11 @@ impl Vm {
                     merged.iter_mut().zip(incoming_locals.iter()).enumerate()
                 {
                     match (*previous, *incoming) {
+                        (Some(StackType::Task), None) | (None, Some(StackType::Task)) => {
+                            return Err(format!(
+                                "inconsistent task-handle ownership in '{owner}' at instruction {pc}: slot {slot} is live on only one incoming path"
+                            ));
+                        }
                         (Some(left), Some(right)) if left != right => {
                             return Err(format!(
                                 "inconsistent local types in '{owner}' at instruction {pc}: slot {slot} is {left:?} versus {right:?}"
