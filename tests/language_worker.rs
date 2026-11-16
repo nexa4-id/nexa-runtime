@@ -11,7 +11,6 @@ fn unknown_name_is_compile_error() {
     assert!(compiler::compile("fn main(){let x=missing;}").is_err());
 }
 
-
 #[test]
 fn typed_task_functions_execute_across_calls() {
     let source = r#"
@@ -45,7 +44,6 @@ fn typed_integer_function_calls_execute() {
     let mut vm = Vm::new(1).unwrap();
     assert_eq!(vm.run(&code).unwrap(), &["42".to_string()]);
 }
-
 
 #[test]
 fn task_handles_can_pass_through_typed_function_parameters() {
