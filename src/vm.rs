@@ -1,4 +1,4 @@
-use crate::compiler::Instruction;
+use crate::compiler::{Instruction, ValueType};
 use crate::worker::{TaskHandle, WorkerError, WorkerPool};
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -33,11 +33,17 @@ impl Vm {
         self.output.clear();
         let mut functions = Functions::new();
         for instruction in code {
-            if let Instruction::DefineFunction(name, params, body) = instruction {
-                if functions
-                    .insert(name.clone(), (params.clone(), body.clone()))
-                    .is_some()
-                {
+            let definition = match instruction {
+                Instruction::DefineFunction(name, params, body) => Some((name, params.clone(), body.clone())),
+                Instruction::DefineTypedFunction(name, params, _, body) => Some((
+                    name,
+                    params.iter().map(|(parameter, _)| parameter.clone()).collect(),
+                    body.clone(),
+                )),
+                _ => None,
+            };
+            if let Some((name, params, body)) = definition {
+                if functions.insert(name.clone(), (params, body)).is_some() {
                     return Err(format!("duplicate function '{name}'"));
                 }
             }
@@ -48,22 +54,40 @@ impl Vm {
         }
 
         let mut signatures = Signatures::new();
-        for (name, (params, _)) in &functions {
-            let mut unique_params = HashSet::new();
-            for param in params {
-                if !unique_params.insert(param) {
-                    return Err(format!(
-                        "duplicate parameter '{param}' in function '{name}'"
-                    ));
+        for instruction in code {
+            match instruction {
+                Instruction::DefineFunction(name, params, _) => {
+                    let mut unique_params = HashSet::new();
+                    for param in params {
+                        if !unique_params.insert(param) {
+                            return Err(format!("duplicate parameter '{param}' in function '{name}'"));
+                        }
+                    }
+                    signatures.insert(name.clone(), FunctionSignature {
+                        parameter_types: vec![StackType::Int; params.len()],
+                        return_type: StackType::Int,
+                    });
                 }
+                Instruction::DefineTypedFunction(name, params, returns, _) => {
+                    let mut unique_params = HashSet::new();
+                    for (param, _) in params {
+                        if !unique_params.insert(param) {
+                            return Err(format!("duplicate parameter '{param}' in function '{name}'"));
+                        }
+                    }
+                    signatures.insert(name.clone(), FunctionSignature {
+                        parameter_types: params.iter().map(|(_, ty)| match ty {
+                            ValueType::Int => StackType::Int,
+                            ValueType::Task => StackType::Task,
+                        }).collect(),
+                        return_type: match returns {
+                            ValueType::Int => StackType::Int,
+                            ValueType::Task => StackType::Task,
+                        },
+                    });
+                }
+                _ => {}
             }
-            signatures.insert(
-                name.clone(),
-                FunctionSignature {
-                    parameter_types: vec![StackType::Int; params.len()],
-                    return_type: StackType::Int,
-                },
-            );
         }
 
         for (name, (_, body)) in &functions {
@@ -526,7 +550,7 @@ impl Vm {
                         .ok_or("invalid or reused task handle")?;
                     stack.push(handle.wait().map_err(|error| error.to_string())?);
                 }
-                Instruction::DefineFunction(..) => {}
+                Instruction::DefineFunction(..) | Instruction::DefineTypedFunction(..) => {}
                 Instruction::Halt => break,
             }
             pc += 1;
