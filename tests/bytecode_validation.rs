@@ -616,3 +616,28 @@ fn verifier_rejects_worker_capture_of_task_handle() {
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("cannot capture task handle"), "{error}");
 }
+
+
+#[test]
+fn verifier_rejects_loading_task_local_twice() {
+    let code = vec![Instruction::DefineTypedFunction("main".into(), vec![], nexa_runtime::compiler::ValueType::Int, vec![
+        Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+        Instruction::Store(0), Instruction::Load(0), Instruction::Wait, Instruction::Pop,
+        Instruction::Load(0), Instruction::Wait, Instruction::Return,
+    ])];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("uninitialized or invalid local slot 0"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_overwriting_live_task_local() {
+    let code = vec![Instruction::DefineTypedFunction("main".into(), vec![], nexa_runtime::compiler::ValueType::Int, vec![
+        Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]), Instruction::Store(0),
+        Instruction::Submit(vec![Instruction::Const(2), Instruction::Halt]), Instruction::Store(0),
+        Instruction::Const(0), Instruction::Return,
+    ])];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("cannot overwrite live task handle"), "{error}");
+}
