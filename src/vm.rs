@@ -1,10 +1,22 @@
 use crate::compiler::Instruction;
 use crate::worker::{TaskHandle, WorkerError, WorkerPool};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 type Functions = HashMap<String, (Vec<String>, Vec<Instruction>)>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nenum StackType {\n    Int,\n    Task,\n}\n\npub struct Vm {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StackType {
+    Int,
+    Task,
+}
+
+#[derive(Debug, Clone)]
+struct FunctionSignature {
+    parameter_types: Vec<StackType>,
+    return_type: StackType,
+}
+
+type Signatures = HashMap<String, FunctionSignature>;\n\npub struct Vm {
     pool: WorkerPool,
     output: Vec<String>,
 }
@@ -32,8 +44,31 @@ impl Vm {
         if !params.is_empty() {
             return Err("main function must not take parameters".into());
         }
-        for (name, (params, body)) in &functions {
-            Self::validate_bytecode(body, params.len(), &functions, name)?;
+
+        let mut signatures = Signatures::new();
+        for (name, (params, _)) in &functions {
+            let mut unique_params = HashSet::new();
+            for param in params {
+                if !unique_params.insert(param) {
+                    return Err(format!(
+                        "duplicate parameter '{param}' in function '{name}'"
+                    ));
+                }
+            }
+            signatures.insert(
+                name.clone(),
+                FunctionSignature {
+                    parameter_types: vec![StackType::Int; params.len()],
+                    return_type: StackType::Int,
+                },
+            );
+        }
+
+        for (name, (_, body)) in &functions {
+            let signature = signatures
+                .get(name)
+                .expect("signature is created for every function");
+            Self::validate_bytecode(body, signature, &functions, &signatures, name)?;
         }
         let (_, main) = functions.get("main").expect("main was checked above");
         let (mut tasks, mut stack) = (Vec::new(), Vec::new());
@@ -51,10 +86,12 @@ impl Vm {
 
     fn validate_bytecode(
         code: &[Instruction],
-        parameter_count: usize,
+        signature: &FunctionSignature,
         functions: &Functions,
+        signatures: &Signatures,
         owner: &str,
     ) -> Result<(), String> {
+        let parameter_count = signature.parameter_types.len();
         let mut frame_slots = parameter_count;
         for instruction in code {
             if let Instruction::Store(slot) = instruction {
@@ -88,7 +125,9 @@ impl Vm {
             code,
             initial_locals,
             functions,
+            signatures,
             owner,
+            false,
         )
     }
 
@@ -96,7 +135,9 @@ impl Vm {
         code: &[Instruction],
         initial_locals: Vec<Option<StackType>>,
         functions: &Functions,
+        signatures: &Signatures,
         owner: &str,
+        worker_body: bool,
     ) -> Result<(), String> {
         if code.is_empty() {
             return Err(format!("empty bytecode body in '{owner}'"));
@@ -113,13 +154,13 @@ impl Vm {
                     ));
                 }
                 Instruction::Call(name, argc) => {
-                    let (params, _) = functions.get(name).ok_or_else(|| {
+                    let signature = signatures.get(name).ok_or_else(|| {
                         format!("'{owner}' calls unknown function '{name}'")
                     })?;
-                    if params.len() != *argc {
+                    if signature.parameter_types.len() != *argc {
                         return Err(format!(
                             "function '{name}' expects {} argument(s), got {argc}",
-                            params.len()
+                            signature.parameter_types.len()
                         ));
                     }
                 }
@@ -168,13 +209,10 @@ impl Vm {
             }
 
             if pc == code.len() {
-                if !stack.is_empty() {
-                    return Err(format!(
-                        "stack is not empty at end of '{owner}' (depth {})",
-                        stack.len()
-                    ));
-                }
-                continue;
+                return Err(format!(
+                    "control flow in '{owner}' falls through without {}",
+                    if worker_body { "Halt" } else { "Return" }
+                ));
             }
 
             let instruction = &code[pc];
@@ -233,7 +271,9 @@ impl Vm {
                         body,
                         locals.clone(),
                         functions,
+                        signatures,
                         owner,
+                        true,
                     )?;
                     stack.push(StackType::Task);
                 }
@@ -260,23 +300,40 @@ impl Vm {
                     }
                 }
                 Instruction::Call(name, argc) => {
-                    for _ in 0..*argc {
+                    let signature = signatures
+                        .get(name)
+                        .expect("call target was checked before dataflow verification");
+                    for expected in signature.parameter_types.iter().rev().take(*argc) {
                         let argument = stack.pop().ok_or_else(|| {
                             format!("stack underflow in '{owner}' at function call '{name}'")
                         })?;
-                        if argument != StackType::Int {
+                        if argument != *expected {
                             return Err(format!(
-                                "function '{name}' arguments must be Int, got {argument:?}"
+                                "function '{name}' argument type mismatch: expected {expected:?}, got {argument:?}"
                             ));
                         }
                     }
-                    stack.push(StackType::Int);
+                    stack.push(signature.return_type);
                 }
                 Instruction::Return | Instruction::Halt => {
-                    if stack.as_slice() != [StackType::Int] {
+                    let is_halt = matches!(instruction, Instruction::Halt);
+                    if is_halt != worker_body {
                         return Err(format!(
-                            "{} in '{owner}' requires exactly one Int value, found {stack:?}",
-                            if matches!(instruction, Instruction::Return) { "Return" } else { "Halt" }
+                            "{} is invalid in '{}': expected {}",
+                            if is_halt { "Halt" } else { "Return" },
+                            owner,
+                            if worker_body { "Halt" } else { "Return" }
+                        ));
+                    }
+                    let expected = if worker_body {
+                        StackType::Int
+                    } else {
+                        StackType::Int
+                    };
+                    if stack.as_slice() != [expected] {
+                        return Err(format!(
+                            "{} in '{owner}' requires exactly one {expected:?} value, found {stack:?}",
+                            if is_halt { "Halt" } else { "Return" }
                         ));
                     }
                     continue;
