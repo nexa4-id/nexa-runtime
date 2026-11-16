@@ -158,9 +158,9 @@ impl Vm {
                     ));
                 }
                 Instruction::Call(name, argc) => {
-                    let signature = signatures.get(name).ok_or_else(|| {
-                        format!("'{owner}' calls unknown function '{name}'")
-                    })?;
+                    let signature = signatures
+                        .get(name)
+                        .ok_or_else(|| format!("'{owner}' calls unknown function '{name}'"))?;
                     if signature.parameter_types.len() != *argc {
                         return Err(format!(
                             "function '{name}' expects {} argument(s), got {argc}",
@@ -190,9 +190,7 @@ impl Vm {
                     ));
                 }
                 let mut merged = previous_locals.clone();
-                for (slot, (previous, incoming)) in
-                    merged.iter_mut().zip(locals.iter()).enumerate()
-                {
+                for (slot, (previous, incoming)) in merged.iter_mut().zip(locals.iter()).enumerate() {
                     match (*previous, *incoming) {
                         (Some(left), Some(right)) if left != right => {
                             return Err(format!(
@@ -236,14 +234,21 @@ impl Vm {
                             "stack underflow in '{owner}' at instruction {pc}: Store needs 1 value"
                         )
                     })?;
-                    let local = locals.get_mut(*slot).ok_or_else(|| {
-                        format!("invalid local slot {slot} in '{owner}'")
-                    })?;
+                    let local = locals
+                        .get_mut(*slot)
+                        .ok_or_else(|| format!("invalid local slot {slot} in '{owner}'"))?;
                     *local = Some(ty);
                 }
-                Instruction::Add | Instruction::Sub | Instruction::Mul | Instruction::Div
-                | Instruction::Eq | Instruction::Ne | Instruction::Lt | Instruction::Le
-                | Instruction::Gt | Instruction::Ge => {
+                Instruction::Add
+                | Instruction::Sub
+                | Instruction::Mul
+                | Instruction::Div
+                | Instruction::Eq
+                | Instruction::Ne
+                | Instruction::Lt
+                | Instruction::Le
+                | Instruction::Gt
+                | Instruction::Ge => {
                     let right = stack.pop().ok_or_else(|| {
                         format!("stack underflow in '{owner}' at instruction {pc}")
                     })?;
