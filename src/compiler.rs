@@ -535,14 +535,18 @@ impl Parser {
             };
             let end = self.code.len();
             self.code[end_jump] = Instruction::Jump(end);
-            self.task_moved = after_then.iter().zip(self.task_moved.iter())
-                .map(|(left, right)| *left || *right).collect();
+            if after_then != self.task_moved {
+                return Err("task handle ownership differs between if/else branches".into());
+            }
+            self.task_moved = after_then;
             Ok(then_returns && else_returns)
         } else {
             let end = self.code.len();
             self.code[branch] = Instruction::JumpIfFalse(end);
-            self.task_moved = after_then.iter().zip(before_branches.iter())
-                .map(|(left, right)| *left || *right).collect();
+            if after_then != before_branches {
+                return Err("task handle may be consumed on only one branch".into());
+            }
+            self.task_moved = after_then;
             Ok(false)
         }
     }
@@ -559,8 +563,9 @@ impl Parser {
         let before_loop = self.task_moved.clone();
         self.loops.push(Vec::new());
         self.block()?;
-        self.task_moved = before_loop.iter().zip(self.task_moved.iter())
-            .map(|(left, right)| *left || *right).collect();
+        if before_loop != self.task_moved {
+            return Err("task handle ownership cannot change inside a loop".into());
+        }
         self.code.push(Instruction::Jump(condition));
         let end = self.code.len();
         self.code[exit] = Instruction::JumpIfFalse(end);
