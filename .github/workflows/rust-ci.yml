@@ -56,3 +56,6 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release
+
+      - name: Smoke-test worker CLI
+        run: test "$(cargo run --quiet -- worker-demo --workers 4)" = "42"
