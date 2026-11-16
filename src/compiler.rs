@@ -441,6 +441,26 @@ impl Parser {
                 self.eat(TokenKind::Semicolon)?;
                 Ok(false)
             }
+            TokenKind::Ident(name) if *self.kind() == TokenKind::LParen => {
+                self.pos -= 1;
+                let ty = self.expression(0)?;
+                if ty == StaticType::Task {
+                    return Err("task handle expression cannot be discarded".into());
+                }
+                self.eat(TokenKind::Semicolon)?;
+                self.code.push(Instruction::Pop);
+                Ok(false)
+            }
+            TokenKind::Worker => {
+                self.pos -= 1;
+                let ty = self.expression(0)?;
+                if ty == StaticType::Task {
+                    return Err("task handle expression cannot be discarded".into());
+                }
+                self.eat(TokenKind::Semicolon)?;
+                self.code.push(Instruction::Pop);
+                Ok(false)
+            }
             TokenKind::Ident(name) => {
                 self.eat(TokenKind::Equal)?;
                 let slot = self
