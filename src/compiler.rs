@@ -3,45 +3,98 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
-    Const(i64), Load(usize), Store(usize), Add, Sub, Mul, Div,
-    Eq, Ne, Lt, Le, Gt, Ge, Print, Pop,
-    Submit(Vec<Instruction>), Wait, Jump(usize), JumpIfFalse(usize),
-    Call(String, usize), Return, DefineFunction(String, Vec<String>, Vec<Instruction>), Halt,
+    Const(i64),
+    Load(usize),
+    Store(usize),
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Print,
+    Pop,
+    Submit(Vec<Instruction>),
+    Wait,
+    Jump(usize),
+    JumpIfFalse(usize),
+    Call(String, usize),
+    Return,
+    DefineFunction(String, Vec<String>, Vec<Instruction>),
+    Halt,
 }
 
 pub fn compile(source: &str) -> Result<Vec<Instruction>, String> {
-    Parser { tokens: lex(source)?, pos: 0, locals: Vec::new(), scopes: Vec::new(),
-        code: Vec::new(), loops: Vec::new() }.program()
+    Parser {
+        tokens: lex(source)?,
+        pos: 0,
+        locals: Vec::new(),
+        scopes: Vec::new(),
+        code: Vec::new(),
+        loops: Vec::new(),
+    }
+    .program()
 }
 
 struct Parser {
-    tokens: Vec<Token>, pos: usize, locals: Vec<String>, scopes: Vec<Vec<String>>,
-    code: Vec<Instruction>, loops: Vec<Vec<usize>>,
+    tokens: Vec<Token>,
+    pos: usize,
+    locals: Vec<String>,
+    scopes: Vec<Vec<String>>,
+    code: Vec<Instruction>,
+    loops: Vec<Vec<usize>>,
 }
 
 impl Parser {
-    fn kind(&self) -> &TokenKind { &self.tokens[self.pos].kind }
-    fn take(&mut self) -> TokenKind { let kind = self.tokens[self.pos].kind.clone(); self.pos += 1; kind }
+    fn kind(&self) -> &TokenKind {
+        &self.tokens[self.pos].kind
+    }
+    fn take(&mut self) -> TokenKind {
+        let kind = self.tokens[self.pos].kind.clone();
+        self.pos += 1;
+        kind
+    }
     fn eat(&mut self, expected: TokenKind) -> Result<(), String> {
         let actual = self.take();
-        if std::mem::discriminant(&actual) == std::mem::discriminant(&expected) { Ok(()) }
-        else { Err(format!("expected {expected:?}, got {actual:?}")) }
+        if std::mem::discriminant(&actual) == std::mem::discriminant(&expected) {
+            Ok(())
+        } else {
+            Err(format!("expected {expected:?}, got {actual:?}"))
+        }
     }
     fn ident(&mut self) -> Result<String, String> {
-        match self.take() { TokenKind::Ident(name) => Ok(name), other => Err(format!("expected identifier, got {other:?}")) }
+        match self.take() {
+            TokenKind::Ident(name) => Ok(name),
+            other => Err(format!("expected identifier, got {other:?}")),
+        }
     }
-    fn lookup(&self, name: &str) -> Option<usize> { self.locals.iter().rposition(|local| local == name) }
-    fn enter_scope(&mut self) { self.scopes.push(Vec::new()); }
+    fn lookup(&self, name: &str) -> Option<usize> {
+        self.locals.iter().rposition(|local| local == name)
+    }
+    fn enter_scope(&mut self) {
+        self.scopes.push(Vec::new());
+    }
     fn leave_scope(&mut self) {
         if let Some(names) = self.scopes.pop() {
             for name in names.into_iter().rev() {
-                if self.locals.last() == Some(&name) { self.locals.pop(); }
+                if self.locals.last() == Some(&name) {
+                    self.locals.pop();
+                }
             }
         }
     }
     fn declare(&mut self, name: String) -> Result<usize, String> {
-        let scope = self.scopes.last_mut().ok_or("internal compiler error: missing scope")?;
-        if scope.contains(&name) { return Err(format!("duplicate local '{name}' in the same scope")); }
+        let scope = self
+            .scopes
+            .last_mut()
+            .ok_or("internal compiler error: missing scope")?;
+        if scope.contains(&name) {
+            return Err(format!("duplicate local '{name}' in the same scope"));
+        }
         let slot = self.locals.len();
         scope.push(name.clone());
         self.locals.push(name);
@@ -58,20 +111,30 @@ impl Parser {
             if *self.kind() != TokenKind::RParen {
                 loop {
                     let param = self.ident()?;
-                    if params.contains(&param) { return Err(format!("duplicate parameter '{param}' in function '{name}'")); }
+                    if params.contains(&param) {
+                        return Err(format!(
+                            "duplicate parameter '{param}' in function '{name}'"
+                        ));
+                    }
                     params.push(param);
-                    if *self.kind() != TokenKind::Comma { break; }
+                    if *self.kind() != TokenKind::Comma {
+                        break;
+                    }
                     self.take();
                 }
             }
             self.eat(TokenKind::RParen)?;
             self.eat(TokenKind::LBrace)?;
-            if functions.insert(name.clone(), params.len()).is_some() { return Err(format!("duplicate function '{name}'")); }
+            if functions.insert(name.clone(), params.len()).is_some() {
+                return Err(format!("duplicate function '{name}'"));
+            }
             self.locals = params.clone();
             self.scopes = vec![params.clone()];
             self.code.clear();
             self.loops.clear();
-            while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof { self.statement()?; }
+            while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof {
+                self.statement()?;
+            }
             self.eat(TokenKind::RBrace)?;
             let mut body = std::mem::take(&mut self.code);
             body.push(Instruction::Const(0));
@@ -80,8 +143,12 @@ impl Parser {
             self.locals.clear();
             self.scopes.clear();
         }
-        if !functions.contains_key("main") { return Err("missing fn main()".into()); }
-        if functions["main"] != 0 { return Err("main function must not take parameters".into()); }
+        if !functions.contains_key("main") {
+            return Err("missing fn main()".into());
+        }
+        if functions["main"] != 0 {
+            return Err("main function must not take parameters".into());
+        }
         for definition in &definitions {
             if let Instruction::DefineFunction(name, _, body) = definition {
                 Self::validate_calls(body, &functions, name)?;
@@ -89,12 +156,22 @@ impl Parser {
         }
         Ok(definitions)
     }
-    fn validate_calls(code: &[Instruction], functions: &HashMap<String, usize>, owner: &str) -> Result<(), String> {
+    fn validate_calls(
+        code: &[Instruction],
+        functions: &HashMap<String, usize>,
+        owner: &str,
+    ) -> Result<(), String> {
         for instruction in code {
             match instruction {
                 Instruction::Call(name, argc) => {
-                    let expected = functions.get(name).ok_or_else(|| format!("function '{owner}' calls unknown function '{name}'"))?;
-                    if expected != argc { return Err(format!("function '{name}' expects {expected} argument(s), got {argc}")); }
+                    let expected = functions.get(name).ok_or_else(|| {
+                        format!("function '{owner}' calls unknown function '{name}'")
+                    })?;
+                    if expected != argc {
+                        return Err(format!(
+                            "function '{name}' expects {expected} argument(s), got {argc}"
+                        ));
+                    }
                 }
                 Instruction::Submit(body) => Self::validate_calls(body, functions, owner)?,
                 _ => {}
@@ -105,7 +182,9 @@ impl Parser {
     fn block(&mut self) -> Result<(), String> {
         self.eat(TokenKind::LBrace)?;
         self.enter_scope();
-        while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof { self.statement()?; }
+        while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof {
+            self.statement()?;
+        }
         self.eat(TokenKind::RBrace)?;
         self.leave_scope();
         Ok(())
@@ -122,61 +201,92 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 self.eat(TokenKind::Equal)?;
-                let slot = self.lookup(&name).ok_or_else(|| format!("assignment to unknown variable '{name}'"))?;
+                let slot = self
+                    .lookup(&name)
+                    .ok_or_else(|| format!("assignment to unknown variable '{name}'"))?;
                 self.expression(0)?;
                 self.code.push(Instruction::Store(slot));
                 self.eat(TokenKind::Semicolon)
             }
             TokenKind::Print => {
-                self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
-                self.eat(TokenKind::Semicolon)?; self.code.push(Instruction::Print); Ok(())
+                self.eat(TokenKind::LParen)?;
+                self.expression(0)?;
+                self.eat(TokenKind::RParen)?;
+                self.eat(TokenKind::Semicolon)?;
+                self.code.push(Instruction::Print);
+                Ok(())
             }
             TokenKind::If => self.if_statement(),
             TokenKind::While => self.while_statement(),
             TokenKind::Break => {
                 self.eat(TokenKind::Semicolon)?;
                 let jumps = self.loops.last_mut().ok_or("'break' used outside a loop")?;
-                jumps.push(self.code.len()); self.code.push(Instruction::Jump(usize::MAX)); Ok(())
+                jumps.push(self.code.len());
+                self.code.push(Instruction::Jump(usize::MAX));
+                Ok(())
             }
             TokenKind::Continue => {
                 self.eat(TokenKind::Semicolon)?;
-                let jumps = self.loops.last_mut().ok_or("'continue' used outside a loop")?;
-                jumps.push(usize::MAX - self.code.len()); self.code.push(Instruction::Jump(usize::MAX)); Ok(())
+                let jumps = self
+                    .loops
+                    .last_mut()
+                    .ok_or("'continue' used outside a loop")?;
+                jumps.push(usize::MAX - self.code.len());
+                self.code.push(Instruction::Jump(usize::MAX));
+                Ok(())
             }
             TokenKind::Return => {
-                self.expression(0)?; self.eat(TokenKind::Semicolon)?;
-                self.code.push(Instruction::Return); Ok(())
+                self.expression(0)?;
+                self.eat(TokenKind::Semicolon)?;
+                self.code.push(Instruction::Return);
+                Ok(())
             }
             other => Err(format!("unsupported statement {other:?}")),
         }
     }
     fn if_statement(&mut self) -> Result<(), String> {
-        self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
-        let branch = self.code.len(); self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        self.eat(TokenKind::LParen)?;
+        self.expression(0)?;
+        self.eat(TokenKind::RParen)?;
+        let branch = self.code.len();
+        self.code.push(Instruction::JumpIfFalse(usize::MAX));
         self.block()?;
         if *self.kind() == TokenKind::Else {
             self.take();
-            let end_jump = self.code.len(); self.code.push(Instruction::Jump(usize::MAX));
+            let end_jump = self.code.len();
+            self.code.push(Instruction::Jump(usize::MAX));
             let else_start = self.code.len();
             self.code[branch] = Instruction::JumpIfFalse(else_start);
-            if *self.kind() == TokenKind::If { self.take(); self.if_statement()?; } else { self.block()?; }
-            let end = self.code.len(); self.code[end_jump] = Instruction::Jump(end);
+            if *self.kind() == TokenKind::If {
+                self.take();
+                self.if_statement()?;
+            } else {
+                self.block()?;
+            }
+            let end = self.code.len();
+            self.code[end_jump] = Instruction::Jump(end);
         } else {
-            let end = self.code.len(); self.code[branch] = Instruction::JumpIfFalse(end);
+            let end = self.code.len();
+            self.code[branch] = Instruction::JumpIfFalse(end);
         }
         Ok(())
     }
     fn while_statement(&mut self) -> Result<(), String> {
         let condition = self.code.len();
-        self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
-        let exit = self.code.len(); self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        self.eat(TokenKind::LParen)?;
+        self.expression(0)?;
+        self.eat(TokenKind::RParen)?;
+        let exit = self.code.len();
+        self.code.push(Instruction::JumpIfFalse(usize::MAX));
         self.loops.push(Vec::new());
         self.block()?;
         self.code.push(Instruction::Jump(condition));
         let end = self.code.len();
         self.code[exit] = Instruction::JumpIfFalse(end);
         for encoded in self.loops.pop().unwrap_or_default() {
-            if encoded == usize::MAX { continue; }
+            if encoded == usize::MAX {
+                continue;
+            }
             if encoded > usize::MAX / 2 {
                 let at = usize::MAX - encoded;
                 self.code[at] = Instruction::Jump(condition);
@@ -191,17 +301,31 @@ impl Parser {
             TokenKind::Number(value) => self.code.push(Instruction::Const(value)),
             TokenKind::Ident(name) => {
                 if *self.kind() == TokenKind::LParen {
-                    self.take(); let mut argc = 0;
+                    self.take();
+                    let mut argc = 0;
                     if *self.kind() != TokenKind::RParen {
-                        loop { self.expression(0)?; argc += 1; if *self.kind() != TokenKind::Comma { break; } self.take(); }
+                        loop {
+                            self.expression(0)?;
+                            argc += 1;
+                            if *self.kind() != TokenKind::Comma {
+                                break;
+                            }
+                            self.take();
+                        }
                     }
-                    self.eat(TokenKind::RParen)?; self.code.push(Instruction::Call(name, argc));
+                    self.eat(TokenKind::RParen)?;
+                    self.code.push(Instruction::Call(name, argc));
                 } else {
-                    let slot = self.lookup(&name).ok_or_else(|| format!("unknown variable '{name}'"))?;
+                    let slot = self
+                        .lookup(&name)
+                        .ok_or_else(|| format!("unknown variable '{name}'"))?;
                     self.code.push(Instruction::Load(slot));
                 }
             }
-            TokenKind::LParen => { self.expression(0)?; self.eat(TokenKind::RParen)?; }
+            TokenKind::LParen => {
+                self.expression(0)?;
+                self.eat(TokenKind::RParen)?;
+            }
             TokenKind::Worker => {
                 self.eat(TokenKind::Dot)?;
                 match self.take() {
@@ -215,7 +339,9 @@ impl Parser {
                         self.code.push(Instruction::Submit(task_code));
                     }
                     TokenKind::Wait => {
-                        self.eat(TokenKind::LParen)?; self.expression(0)?; self.eat(TokenKind::RParen)?;
+                        self.eat(TokenKind::LParen)?;
+                        self.expression(0)?;
+                        self.eat(TokenKind::RParen)?;
                         self.code.push(Instruction::Wait);
                     }
                     other => return Err(format!("expected submit or wait, got {other:?}")),
@@ -225,15 +351,24 @@ impl Parser {
         }
         loop {
             let (precedence, op) = match self.kind() {
-                TokenKind::EqualEqual => (1, Some(Instruction::Eq)), TokenKind::BangEqual => (1, Some(Instruction::Ne)),
-                TokenKind::Less => (1, Some(Instruction::Lt)), TokenKind::LessEqual => (1, Some(Instruction::Le)),
-                TokenKind::Greater => (1, Some(Instruction::Gt)), TokenKind::GreaterEqual => (1, Some(Instruction::Ge)),
-                TokenKind::Plus => (2, Some(Instruction::Add)), TokenKind::Minus => (2, Some(Instruction::Sub)),
-                TokenKind::Star => (3, Some(Instruction::Mul)), TokenKind::Slash => (3, Some(Instruction::Div)),
+                TokenKind::EqualEqual => (1, Some(Instruction::Eq)),
+                TokenKind::BangEqual => (1, Some(Instruction::Ne)),
+                TokenKind::Less => (1, Some(Instruction::Lt)),
+                TokenKind::LessEqual => (1, Some(Instruction::Le)),
+                TokenKind::Greater => (1, Some(Instruction::Gt)),
+                TokenKind::GreaterEqual => (1, Some(Instruction::Ge)),
+                TokenKind::Plus => (2, Some(Instruction::Add)),
+                TokenKind::Minus => (2, Some(Instruction::Sub)),
+                TokenKind::Star => (3, Some(Instruction::Mul)),
+                TokenKind::Slash => (3, Some(Instruction::Div)),
                 _ => (0, None),
             };
-            if precedence == 0 || precedence < min_precedence { break; }
-            self.take(); self.expression(precedence + 1)?; self.code.push(op.expect("operator was matched"));
+            if precedence == 0 || precedence < min_precedence {
+                break;
+            }
+            self.take();
+            self.expression(precedence + 1)?;
+            self.code.push(op.expect("operator was matched"));
         }
         Ok(())
     }

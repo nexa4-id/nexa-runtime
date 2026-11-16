@@ -1,1 +1,12 @@
-use nexa_runtime::{compiler,Vm};#[test]fn worker_capture_wait_prints_42(){let s="fn main(){let base=21;let task=worker.submit{base*2};let result=worker.wait(task);print(result);}";let c=compiler::compile(s).unwrap();let mut vm=Vm::new(2).unwrap();assert_eq!(vm.run(&c).unwrap(),&["42".to_string()]);}#[test]fn unknown_name_is_compile_error(){assert!(compiler::compile("fn main(){let x=missing;}").is_err());}
+use nexa_runtime::{compiler, Vm};
+#[test]
+fn worker_capture_wait_prints_42() {
+    let s="fn main(){let base=21;let task=worker.submit{base*2};let result=worker.wait(task);print(result);}";
+    let c = compiler::compile(s).unwrap();
+    let mut vm = Vm::new(2).unwrap();
+    assert_eq!(vm.run(&c).unwrap(), &["42".to_string()]);
+}
+#[test]
+fn unknown_name_is_compile_error() {
+    assert!(compiler::compile("fn main(){let x=missing;}").is_err());
+}
