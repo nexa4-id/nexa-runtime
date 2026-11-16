@@ -63,7 +63,7 @@ impl Vm {
                 Instruction::Store(slot) => {
                     let value = stack.pop().ok_or("stack underflow")?;
                     if *slot >= locals.len() {
-                        locals.resize(slot + 1, 0);
+                        locals.resize(*slot + 1, 0);
                     }
                     locals[*slot] = value;
                 }
@@ -180,7 +180,7 @@ impl Vm {
                         .get_mut(index)
                         .and_then(Option::take)
                         .ok_or("invalid or reused task handle")?;
-                    stack.push(handle.wait().map_errh|error| error.to_string())?);
+                    stack.push(handle.wait().map_err(|error| error.to_string())?);
                 }
                 Instruction::DefineFunction(..) => {}
                 Instruction::Halt => break,
