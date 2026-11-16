@@ -120,8 +120,11 @@ impl Vm {
         }
 
         let mut initial_locals = vec![None; frame_slots];
-        for local in initial_locals.iter_mut().take(parameter_count) {
-            *local = Some(StackType::Int);
+        for (local, parameter_type) in initial_locals
+            .iter_mut()
+            .zip(signature.parameter_types.iter())
+        {
+            *local = Some(*parameter_type);
         }
         Self::validate_typed_bytecode(
             code,
