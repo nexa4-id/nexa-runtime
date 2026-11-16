@@ -547,3 +547,50 @@ fn verifier_checks_invalid_local_load_even_in_unreachable_code() {
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("invalid local slot 9"), "{error}");
 }
+
+
+#[test]
+fn verifier_uses_typed_function_parameter_metadata() {
+    let code = vec![
+        Instruction::DefineTypedFunction(
+            "main".into(),
+            vec![],
+            nexa_runtime::compiler::ValueType::Int,
+            vec![
+                Instruction::Const(7),
+                Instruction::Call("consume_task".into(), 1),
+                Instruction::Return,
+            ],
+        ),
+        Instruction::DefineTypedFunction(
+            "consume_task".into(),
+            vec![("task".into(), nexa_runtime::compiler::ValueType::Task)],
+            nexa_runtime::compiler::ValueType::Int,
+            vec![Instruction::Load(0), Instruction::Wait, Instruction::Return],
+        ),
+    ];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("argument type mismatch"), "{error}");
+}
+
+#[test]
+fn verifier_enforces_task_function_return_contract() {
+    let code = vec![
+        Instruction::DefineTypedFunction(
+            "main".into(),
+            vec![],
+            nexa_runtime::compiler::ValueType::Int,
+            vec![Instruction::Const(0), Instruction::Return],
+        ),
+        Instruction::DefineTypedFunction(
+            "make_task".into(),
+            vec![],
+            nexa_runtime::compiler::ValueType::Task,
+            vec![Instruction::Const(5), Instruction::Return],
+        ),
+    ];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("requires exactly one Task"), "{error}");
+}
