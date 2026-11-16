@@ -16,7 +16,9 @@ struct FunctionSignature {
     return_type: StackType,
 }
 
-type Signatures = HashMap<String, FunctionSignature>;\n\npub struct Vm {
+type Signatures = HashMap<String, FunctionSignature>;
+
+pub struct Vm {
     pool: WorkerPool,
     output: Vec<String>,
 }
