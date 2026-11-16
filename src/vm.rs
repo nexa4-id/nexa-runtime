@@ -20,7 +20,6 @@ impl Vm {
         let mut functions = Functions::new();
         for instruction in code {
             if let Instruction::DefineFunction(name, params, body) = instruction {
-                Self::validate_bytecode(body)?;
                 if functions
                     .insert(name.clone(), (params.clone(), body.clone()))
                     .is_some()
@@ -29,10 +28,14 @@ impl Vm {
                 }
             }
         }
-        let (params, main) = functions.get("main").ok_or("missing main function")?;
+        let (params, _) = functions.get("main").ok_or("missing main function")?;
         if !params.is_empty() {
             return Err("main function must not take parameters".into());
         }
+        for (name, (params, body)) in &functions {
+            Self::validate_bytecode(body, params.len(), &functions, name)?;
+        }
+        let (_, main) = functions.get("main").expect("main was checked above");
         let (mut tasks, mut stack) = (Vec::new(), Vec::new());
         Self::execute(
             main,
@@ -45,19 +48,112 @@ impl Vm {
         )?;
         Ok(&self.output)
     }
-    fn validate_bytecode(code: &[Instruction]) -> Result<(), String> {
-        for (index, instruction) in code.iter().enumerate() {
-            match instruction {
-                Instruction::Jump(target) | Instruction::JumpIfFalse(target)
-                    if *target > code.len() =>
-                {
+
+    fn validate_bytecode(
+        code: &[Instruction],
+        parameter_count: usize,
+        functions: &Functions,
+        owner: &str,
+    ) -> Result<(), String> {
+        let mut frame_slots = parameter_count;
+        for instruction in code {
+            if let Instruction::Store(slot) = instruction {
+                frame_slots = frame_slots.max(slot + 1);
+            }
+        }
+        let mut depths: Vec<Option<usize>> = vec![None; code.len() + 1];
+        let mut pending = vec![(0usize, 0usize)];
+        while let Some((pc, depth)) = pending.pop() {
+            if pc > code.len() {
+                return Err(format!("invalid bytecode control-flow target in '{owner}'"));
+            }
+            if let Some(previous) = depths[pc] {
+                if previous != depth {
                     return Err(format!(
-                        "invalid bytecode jump at instruction {index}: target {target} exceeds code length {}",
-                        code.len()
+                        "inconsistent stack depth in '{owner}' at instruction {pc}: {previous} versus {depth}"
                     ));
                 }
-                Instruction::Submit(body) => Self::validate_bytecode(body)?,
-                _ => {}
+                continue;
+            }
+            depths[pc] = Some(depth);
+            if pc == code.len() {
+                if depth != 0 {
+                    return Err(format!(
+                        "stack is not empty at end of '{owner}' (depth {depth})"
+                    ));
+                }
+                continue;
+            }
+            let instruction = &code[pc];
+            let (required, produced) = match instruction {
+                Instruction::Const(_) => (0, 1),
+                Instruction::Load(slot) => {
+                    if *slot >= frame_slots {
+                        return Err(format!("invalid local slot {slot} in '{owner}'"));
+                    }
+                    (0, 1)
+                }
+                Instruction::Store(slot) => {
+                    if *slot >= frame_slots {
+                        return Err(format!("invalid local slot {slot} in '{owner}'"));
+                    }
+                    (1, 0)
+                }
+                Instruction::Add | Instruction::Sub | Instruction::Mul | Instruction::Div
+                | Instruction::Eq | Instruction::Ne | Instruction::Lt | Instruction::Le
+                | Instruction::Gt | Instruction::Ge => (2, 1),
+                Instruction::Print | Instruction::Pop | Instruction::JumpIfFalse(_) => (1, 0),
+                Instruction::Submit(body) => {
+                    Self::validate_bytecode(body, frame_slots, functions, owner)?;
+                    (0, 1)
+                }
+                Instruction::Wait => (1, 1),
+                Instruction::Jump(_) => (0, 0),
+                Instruction::Call(name, argc) => {
+                    let (params, _) = functions.get(name).ok_or_else(|| {
+                        format!("'{owner}' calls unknown function '{name}'")
+                    })?;
+                    if params.len() != *argc {
+                        return Err(format!(
+                            "function '{name}' expects {} argument(s), got {argc}",
+                            params.len()
+                        ));
+                    }
+                    (*argc, 1)
+                }
+                Instruction::Return => {
+                    if depth != 1 {
+                        return Err(format!(
+                            "return in '{owner}' requires exactly one stack value, found {depth}"
+                        ));
+                    }
+                    continue;
+                }
+                Instruction::Halt => {
+                    if depth != 1 {
+                        return Err(format!(
+                            "halt in '{owner}' requires exactly one stack value, found {depth}"
+                        ));
+                    }
+                    continue;
+                }
+                Instruction::DefineFunction(..) => {
+                    return Err(format!("nested function definition in '{owner}'"));
+                }
+            };
+            if depth < required {
+                return Err(format!(
+                    "stack underflow in '{owner}' at instruction {pc}: needs {required}, has {depth}"
+                ));
+            }
+            let next_depth = depth - required + produced;
+            match instruction {
+                Instruction::Jump(target) => pending.push((*target, next_depth)),
+                Instruction::JumpIfFalse(target) => {
+                    pending.push((*target, next_depth));
+                    pending.push((pc + 1, next_depth));
+                }
+                _ => pending.push((pc + 1, next_depth)),
             }
         }
         Ok(())
