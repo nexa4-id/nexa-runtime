@@ -60,12 +60,8 @@ fn task_handles_are_rejected_in_conditions_and_function_arguments() {
         "fn consume(value){return value;}fn main(){let task=worker.submit{1};consume(task);}",
     )
     .unwrap_err();
-    assert!(
-        argument.contains("expects Int"),
-        "{argument}"
-    );
+    assert!(argument.contains("expects Int"), "{argument}");
 }
-
 
 #[test]
 fn typed_function_signatures_accept_int_and_task_parameters_and_returns() {
@@ -116,15 +112,19 @@ fn typed_function_calls_reject_wrong_argument_types() {
 
 #[test]
 fn typed_function_return_contract_rejects_wrong_types() {
-    let wrong_return = compiler::compile(
-        "fn make_task() -> task { return 7; } fn main() {}"
-    ).unwrap_err();
-    assert!(wrong_return.contains("return type mismatch"), "{wrong_return}");
+    let wrong_return =
+        compiler::compile("fn make_task() -> task { return 7; } fn main() {}").unwrap_err();
+    assert!(
+        wrong_return.contains("return type mismatch"),
+        "{wrong_return}"
+    );
 
-    let missing_return = compiler::compile(
-        "fn make_task() -> task { let value=1; } fn main() {}"
-    ).unwrap_err();
-    assert!(missing_return.contains("may finish without returning"), "{missing_return}");
+    let missing_return =
+        compiler::compile("fn make_task() -> task { let value=1; } fn main() {}").unwrap_err();
+    assert!(
+        missing_return.contains("may finish without returning"),
+        "{missing_return}"
+    );
 }
 
 #[test]
@@ -133,11 +133,11 @@ fn legacy_unannotated_functions_remain_integer_typed() {
     assert!(compiler::compile(source).is_ok());
 }
 
-
 #[test]
 fn worker_submit_cannot_capture_task_handle() {
     let error = compiler::compile(
-        "fn main() { let task=worker.submit{1}; let other=worker.submit{worker.wait(task)}; }"
-    ).unwrap_err();
+        "fn main() { let task=worker.submit{1}; let other=worker.submit{worker.wait(task)}; }",
+    )
+    .unwrap_err();
     assert!(error.contains("cannot capture task handle"), "{error}");
 }
