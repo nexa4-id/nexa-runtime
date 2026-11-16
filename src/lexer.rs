@@ -20,6 +20,8 @@ pub enum TokenKind {
     RBrace,
     Semicolon,
     Comma,
+    Colon,
+    Arrow,
     Dot,
     Equal,
     EqualEqual,
@@ -102,6 +104,7 @@ pub fn lex(source: &str) -> Result<Vec<Token>, String> {
         let next = chars.get(i + 1).copied();
         let (kind, width) = match (c, next) {
             ('=', Some('=')) => (TokenKind::EqualEqual, 2),
+            ('-', Some('>')) => (TokenKind::Arrow, 2),
             ('!', Some('=')) => (TokenKind::BangEqual, 2),
             ('<', Some('=')) => (TokenKind::LessEqual, 2),
             ('>', Some('=')) => (TokenKind::GreaterEqual, 2),
@@ -114,6 +117,7 @@ pub fn lex(source: &str) -> Result<Vec<Token>, String> {
             ('}', _) => (TokenKind::RBrace, 1),
             (';', _) => (TokenKind::Semicolon, 1),
             (',', _) => (TokenKind::Comma, 1),
+            (':', _) => (TokenKind::Colon, 1),
             ('.', _) => (TokenKind::Dot, 1),
             ('+', _) => (TokenKind::Plus, 1),
             ('-', _) => (TokenKind::Minus, 1),
