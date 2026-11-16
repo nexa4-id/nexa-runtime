@@ -132,3 +132,12 @@ fn legacy_unannotated_functions_remain_integer_typed() {
     let source = "fn identity(value) { return value; } fn main() { print(identity(42)); }";
     assert!(compiler::compile(source).is_ok());
 }
+
+
+#[test]
+fn worker_submit_cannot_capture_task_handle() {
+    let error = compiler::compile(
+        "fn main() { let task=worker.submit{1}; let other=worker.submit{worker.wait(task)}; }"
+    ).unwrap_err();
+    assert!(error.contains("cannot capture task handle"), "{error}");
+}
