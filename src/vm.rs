@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 type Functions = HashMap<String, (Vec<String>, Vec<Instruction>)>;
 
-pub struct Vm {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nenum StackType {\n    Int,\n    Task,\n}\n\npub struct Vm {
     pool: WorkerPool,
     output: Vec<String>,
 }
@@ -80,35 +80,30 @@ impl Vm {
             ));
         }
 
-        let mut initial_slots = vec![false; frame_slots];
-        for slot in initial_slots.iter_mut().take(parameter_count) {
-            *slot = true;
+        let mut initial_locals = vec![None; frame_slots];
+        for local in initial_locals.iter_mut().take(parameter_count) {
+            *local = Some(StackType::Int);
         }
-        Self::validate_bytecode_with_state(
+        Self::validate_typed_bytecode(
             code,
-            frame_slots,
-            initial_slots,
+            initial_locals,
             functions,
             owner,
         )
     }
 
-    fn validate_bytecode_with_state(
+    fn validate_typed_bytecode(
         code: &[Instruction],
-        frame_slots: usize,
-        initial_slots: Vec<bool>,
+        initial_locals: Vec<Option<StackType>>,
         functions: &Functions,
         owner: &str,
     ) -> Result<(), String> {
-        if initial_slots.len() != frame_slots {
-            return Err(format!("invalid local frame layout in '{owner}'"));
+        if code.is_empty() {
+            return Err(format!("empty bytecode body in '{owner}'"));
         }
 
         for (index, instruction) in code.iter().enumerate() {
             match instruction {
-                Instruction::Store(slot) if *slot >= frame_slots => {
-                    return Err(format!("invalid local slot {slot} in '{owner}'"));
-                }
                 Instruction::Jump(target) | Instruction::JumpIfFalse(target)
                     if *target > code.len() =>
                 {
@@ -132,104 +127,156 @@ impl Vm {
             }
         }
 
-        let mut depths: Vec<Option<usize>> = vec![None; code.len() + 1];
-        let mut initialized: Vec<Option<Vec<bool>>> = vec![None; code.len() + 1];
-        let mut pending = vec![(0usize, 0usize, initial_slots)];
-        while let Some((pc, depth, mut slots)) = pending.pop() {
+        // Each program point carries an exact operand-stack type sequence and
+        // the types definitely initialized in each local slot.
+        let mut states: Vec<Option<(Vec<StackType>, Vec<Option<StackType>>)>> =
+            vec![None; code.len() + 1];
+        let mut pending = vec![(0usize, Vec::<StackType>::new(), initial_locals)];
+
+        while let Some((pc, mut stack, mut locals)) = pending.pop() {
             if pc > code.len() {
                 return Err(format!("invalid bytecode control-flow target in '{owner}'"));
             }
 
-            if let Some(previous_depth) = depths[pc] {
-                if previous_depth != depth {
+            if let Some((previous_stack, previous_locals)) = &states[pc] {
+                if previous_stack != &stack {
                     return Err(format!(
-                        "inconsistent stack depth in '{owner}' at instruction {pc}: {previous_depth} versus {depth}"
+                        "inconsistent stack types in '{owner}' at instruction {pc}: {previous_stack:?} versus {stack:?}"
                     ));
                 }
-                let previous_slots = initialized[pc]
-                    .as_ref()
-                    .expect("stack depth and local state are recorded together");
-                let merged: Vec<bool> = previous_slots
-                    .iter()
-                    .zip(slots.iter())
-                    .map(|(left, right)| *left && *right)
-                    .collect();
-                if &merged == previous_slots {
+                let mut merged = previous_locals.clone();
+                for (slot, (previous, incoming)) in
+                    merged.iter_mut().zip(locals.iter()).enumerate()
+                {
+                    match (*previous, *incoming) {
+                        (Some(left), Some(right)) if left != right => {
+                            return Err(format!(
+                                "inconsistent local types in '{owner}' at instruction {pc}: slot {slot} is {left:?} versus {right:?}"
+                            ));
+                        }
+                        (Some(_), None) => *previous = None,
+                        _ => {}
+                    }
+                }
+                if &merged == previous_locals {
                     continue;
                 }
-                initialized[pc] = Some(merged.clone());
-                slots = merged;
+                states[pc] = Some((stack.clone(), merged.clone()));
+                locals = merged;
             } else {
-                depths[pc] = Some(depth);
-                initialized[pc] = Some(slots.clone());
+                states[pc] = Some((stack.clone(), locals.clone()));
             }
 
             if pc == code.len() {
-                if depth != 0 {
+                if !stack.is_empty() {
                     return Err(format!(
-                        "stack is not empty at end of '{owner}' (depth {depth})"
+                        "stack is not empty at end of '{owner}' (depth {})",
+                        stack.len()
                     ));
                 }
                 continue;
             }
 
             let instruction = &code[pc];
-            let (required, produced) = match instruction {
-                Instruction::Const(_) => (0, 1),
+            match instruction {
+                Instruction::Const(_) => stack.push(StackType::Int),
                 Instruction::Load(slot) => {
-                    if *slot >= frame_slots || !slots[*slot] {
-                        return Err(format!(
+                    let ty = locals.get(*slot).copied().flatten().ok_or_else(|| {
+                        format!(
                             "load from uninitialized or invalid local slot {slot} in '{owner}' at instruction {pc}"
-                        ));
-                    }
-                    (0, 1)
+                        )
+                    })?;
+                    stack.push(ty);
                 }
                 Instruction::Store(slot) => {
-                    if *slot >= frame_slots {
-                        return Err(format!("invalid local slot {slot} in '{owner}'"));
-                    }
-                    (1, 0)
+                    let ty = stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}: Store needs 1 value")
+                    })?;
+                    let local = locals.get_mut(*slot).ok_or_else(|| {
+                        format!("invalid local slot {slot} in '{owner}'")
+                    })?;
+                    *local = Some(ty);
                 }
                 Instruction::Add | Instruction::Sub | Instruction::Mul | Instruction::Div
                 | Instruction::Eq | Instruction::Ne | Instruction::Lt | Instruction::Le
-                | Instruction::Gt | Instruction::Ge => (2, 1),
-                Instruction::Print | Instruction::Pop | Instruction::JumpIfFalse(_) => (1, 0),
+                | Instruction::Gt | Instruction::Ge => {
+                    let right = stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}")
+                    })?;
+                    let left = stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}")
+                    })?;
+                    if left != StackType::Int || right != StackType::Int {
+                        return Err(format!(
+                            "integer operation in '{owner}' at instruction {pc} requires Int operands, got {left:?} and {right:?}"
+                        ));
+                    }
+                    stack.push(StackType::Int);
+                }
+                Instruction::Print => {
+                    let value = stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}")
+                    })?;
+                    if value != StackType::Int {
+                        return Err(format!(
+                            "Print in '{owner}' at instruction {pc} requires Int, got {value:?}"
+                        ));
+                    }
+                }
+                Instruction::Pop => {
+                    stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}")
+                    })?;
+                }
                 Instruction::Submit(body) => {
-                    Self::validate_bytecode_with_state(
+                    Self::validate_typed_bytecode(
                         body,
-                        frame_slots,
-                        slots.clone(),
+                        locals.clone(),
                         functions,
                         owner,
                     )?;
-                    (0, 1)
+                    stack.push(StackType::Task);
                 }
-                Instruction::Wait => (1, 1),
-                Instruction::Jump(_) => (0, 0),
-                Instruction::Call(name, argc) => {
-                    let (params, _) = functions.get(name).ok_or_else(|| {
-                        format!("'{owner}' calls unknown function '{name}'")
+                Instruction::Wait => {
+                    let handle = stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}")
                     })?;
-                    if params.len() != *argc {
+                    if handle != StackType::Task {
                         return Err(format!(
-                            "function '{name}' expects {} argument(s), got {argc}",
-                            params.len()
+                            "Wait in '{owner}' at instruction {pc} requires Task, got {handle:?}"
                         ));
                     }
-                    (*argc, 1)
+                    stack.push(StackType::Int);
                 }
-                Instruction::Return => {
-                    if depth != 1 {
+                Instruction::Jump(_) => {}
+                Instruction::JumpIfFalse(_) => {
+                    let condition = stack.pop().ok_or_else(|| {
+                        format!("stack underflow in '{owner}' at instruction {pc}")
+                    })?;
+                    if condition != StackType::Int {
                         return Err(format!(
-                            "return in '{owner}' requires exactly one stack value, found {depth}"
+                            "JumpIfFalse in '{owner}' at instruction {pc} requires Int, got {condition:?}"
                         ));
                     }
-                    continue;
                 }
-                Instruction::Halt => {
-                    if depth != 1 {
+                Instruction::Call(name, argc) => {
+                    for _ in 0..*argc {
+                        let argument = stack.pop().ok_or_else(|| {
+                            format!("stack underflow in '{owner}' at function call '{name}'")
+                        })?;
+                        if argument != StackType::Int {
+                            return Err(format!(
+                                "function '{name}' arguments must be Int, got {argument:?}"
+                            ));
+                        }
+                    }
+                    stack.push(StackType::Int);
+                }
+                Instruction::Return | Instruction::Halt => {
+                    if stack.as_slice() != [StackType::Int] {
                         return Err(format!(
-                            "halt in '{owner}' requires exactly one stack value, found {depth}"
+                            "{} in '{owner}' requires exactly one Int value, found {stack:?}",
+                            if matches!(instruction, Instruction::Return) { "Return" } else { "Halt" }
                         ));
                     }
                     continue;
@@ -237,24 +284,15 @@ impl Vm {
                 Instruction::DefineFunction(..) => {
                     return Err(format!("nested function definition in '{owner}'"));
                 }
-            };
+            }
 
-            if depth < required {
-                return Err(format!(
-                    "stack underflow in '{owner}' at instruction {pc}: needs {required}, has {depth}"
-                ));
-            }
-            let next_depth = depth - required + produced;
-            if let Instruction::Store(slot) = instruction {
-                slots[*slot] = true;
-            }
             match instruction {
-                Instruction::Jump(target) => pending.push((*target, next_depth, slots)),
+                Instruction::Jump(target) => pending.push((*target, stack, locals)),
                 Instruction::JumpIfFalse(target) => {
-                    pending.push((*target, next_depth, slots.clone()));
-                    pending.push((pc + 1, next_depth, slots));
+                    pending.push((*target, stack.clone(), locals.clone()));
+                    pending.push((pc + 1, stack, locals));
                 }
-                _ => pending.push((pc + 1, next_depth, slots)),
+                _ => pending.push((pc + 1, stack, locals)),
             }
         }
         Ok(())
