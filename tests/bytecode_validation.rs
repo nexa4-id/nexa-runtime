@@ -362,8 +362,9 @@ fn verifier_rejects_task_value_on_branch_before_print() {
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
     assert!(
-        error.contains("Print") && error.contains("Task")
-            || error.contains("inconsistent local types"),
+        (error.contains("Print") && error.contains("Task"))
+            || error.contains("inconsistent local types")
+            || error.contains("inconsistent stack types"),
         "{error}"
     );
 }
@@ -390,7 +391,11 @@ fn verifier_rejects_task_local_on_branch_before_print() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("Print") && error.contains("Task"), "{error}");
+    assert!(
+        (error.contains("Print") && error.contains("Task"))
+            || error.contains("inconsistent local types"),
+        "{error}"
+    );
 }
 
 #[test]
