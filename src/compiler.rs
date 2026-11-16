@@ -82,7 +82,8 @@ struct Parser {
 
 impl Parser {
     fn diagnostic(&self, source: &str, message: &str) -> String {
-        let offset = self.tokens
+        let offset = self
+            .tokens
             .get(self.pos.saturating_sub(1))
             .or_else(|| self.tokens.get(self.pos))
             .map(|token| token.offset)
