@@ -56,13 +56,46 @@ impl Vm {
         owner: &str,
     ) -> Result<(), String> {
         let mut frame_slots = parameter_count;
+        for instruction in code {
+            if let Instruction::Store(slot) = instruction {
+                let required_slots = slot.checked_add(1).ok_or_else(|| {
+                    format!("invalid local slot {slot} in '{owner}'")
+                })?;
+                frame_slots = frame_slots.max(required_slots);
+            }
+        }
+        let mut initial_slots = vec![false; frame_slots];
+        for slot in initial_slots.iter_mut().take(parameter_count) {
+            *slot = true;
+        }
+        Self::validate_bytecode_with_state(
+            code,
+            frame_slots,
+            initial_slots,
+            functions,
+            owner,
+        )
+    }
+
+    fn validate_bytecode_with_state(
+        code: &[Instruction],
+        frame_slots: usize,
+        initial_slots: Vec<bool>,
+        functions: &Functions,
+        owner: &str,
+    ) -> Result<(), String> {
+        if initial_slots.len() != frame_slots {
+            return Err(format!("invalid local frame layout in '{owner}'"));
+        }
+
+        let mut declared_slots = initial_slots.clone();
         for (index, instruction) in code.iter().enumerate() {
             match instruction {
                 Instruction::Store(slot) => {
-                    let required_slots = slot.checked_add(1).ok_or_else(|| {
-                        format!("invalid local slot {slot} in '{owner}'")
-                    })?;
-                    frame_slots = frame_slots.max(required_slots);
+                    if *slot >= frame_slots {
+                        return Err(format!("invalid local slot {slot} in '{owner}'"));
+                    }
+                    declared_slots[*slot] = true;
                 }
                 Instruction::Jump(target) | Instruction::JumpIfFalse(target)
                     if *target > code.len() =>
@@ -83,39 +116,44 @@ impl Vm {
                         ));
                     }
                 }
-                Instruction::Submit(body) => {
-                    Self::validate_bytecode(body, frame_slots, functions, owner)?;
-                }
                 _ => {}
             }
         }
-        let mut declared_slots = vec![false; frame_slots];
-        for slot in declared_slots.iter_mut().take(parameter_count) {
-            *slot = true;
-        }
-        for instruction in code {
-            if let Instruction::Store(slot) = instruction {
-                declared_slots[*slot] = true;
-            }
-        }
         if let Some(slot) = declared_slots.iter().position(|declared| !declared) {
-            return Err(format!("invalid local slot layout in '{owner}': slot {slot} is undeclared"));
+            return Err(format!(
+                "invalid local slot layout in '{owner}': slot {slot} is undeclared"
+            ));
         }
+
         let mut depths: Vec<Option<usize>> = vec![None; code.len() + 1];
-        let mut pending = vec![(0usize, 0usize)];
-        while let Some((pc, depth)) = pending.pop() {
+        let mut initialized: Vec<Option<Vec<bool>>> = vec![None; code.len() + 1];
+        let mut pending = vec![(0usize, 0usize, initial_slots)];
+        while let Some((pc, depth, slots)) = pending.pop() {
             if pc > code.len() {
                 return Err(format!("invalid bytecode control-flow target in '{owner}'"));
             }
-            if let Some(previous) = depths[pc] {
-                if previous != depth {
+            if let Some(previous_depth) = depths[pc] {
+                if previous_depth != depth {
                     return Err(format!(
-                        "inconsistent stack depth in '{owner}' at instruction {pc}: {previous} versus {depth}"
+                        "inconsistent stack depth in '{owner}' at instruction {pc}: {previous_depth} versus {depth}"
                     ));
+                }
+                let previous_slots = initialized[pc]
+                    .as_ref()
+                    .expect("stack depth and local state are recorded together");
+                let merged: Vec<bool> = previous_slots
+                    .iter()
+                    .zip(slots.iter())
+                    .map(|(left, right)| *left && *right)
+                    .collect();
+                if &merged != previous_slots {
+                    initialized[pc] = Some(merged.clone());
+                    pending.push((pc, depth, merged));
                 }
                 continue;
             }
             depths[pc] = Some(depth);
+            initialized[pc] = Some(slots.clone());
             if pc == code.len() {
                 if depth != 0 {
                     return Err(format!(
@@ -124,17 +162,20 @@ impl Vm {
                 }
                 continue;
             }
+
             let instruction = &code[pc];
             let (required, produced) = match instruction {
                 Instruction::Const(_) => (0, 1),
                 Instruction::Load(slot) => {
-                    if *slot >= frame_slots || !declared_slots[*slot] {
-                        return Err(format!("invalid local slot {slot} in '{owner}'"));
+                    if *slot >= frame_slots || !slots[*slot] {
+                        return Err(format!(
+                            "load from uninitialized or invalid local slot {slot} in '{owner}' at instruction {pc}"
+                        ));
                     }
                     (0, 1)
                 }
                 Instruction::Store(slot) => {
-                    if *slot >= frame_slots || !declared_slots[*slot] {
+                    if *slot >= frame_slots {
                         return Err(format!("invalid local slot {slot} in '{owner}'"));
                     }
                     (1, 0)
@@ -143,7 +184,16 @@ impl Vm {
                 | Instruction::Eq | Instruction::Ne | Instruction::Lt | Instruction::Le
                 | Instruction::Gt | Instruction::Ge => (2, 1),
                 Instruction::Print | Instruction::Pop | Instruction::JumpIfFalse(_) => (1, 0),
-                Instruction::Submit(_) => (0, 1),
+                Instruction::Submit(body) => {
+                    Self::validate_bytecode_with_state(
+                        body,
+                        frame_slots,
+                        slots.clone(),
+                        functions,
+                        owner,
+                    )?;
+                    (0, 1)
+                }
                 Instruction::Wait => (1, 1),
                 Instruction::Jump(_) => (0, 0),
                 Instruction::Call(name, argc) => {
@@ -184,13 +234,17 @@ impl Vm {
                 ));
             }
             let next_depth = depth - required + produced;
+            let mut next_slots = slots;
+            if let Instruction::Store(slot) = instruction {
+                next_slots[*slot] = true;
+            }
             match instruction {
-                Instruction::Jump(target) => pending.push((*target, next_depth)),
+                Instruction::Jump(target) => pending.push((*target, next_depth, next_slots)),
                 Instruction::JumpIfFalse(target) => {
-                    pending.push((*target, next_depth));
-                    pending.push((pc + 1, next_depth));
+                    pending.push((*target, next_depth, next_slots.clone()));
+                    pending.push((pc + 1, next_depth, next_slots));
                 }
-                _ => pending.push((pc + 1, next_depth)),
+                _ => pending.push((pc + 1, next_depth, next_slots)),
             }
         }
         Ok(())
