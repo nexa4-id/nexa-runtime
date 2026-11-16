@@ -461,6 +461,23 @@ impl Parser {
         }
         Ok(false)
     }
+    fn task_capture_slot(code: &[Instruction], local_types: &[StaticType]) -> Option<usize> {
+        for instruction in code {
+            match instruction {
+                Instruction::Load(slot) if local_types.get(*slot) == Some(&StaticType::Task) => {
+                    return Some(*slot);
+                }
+                Instruction::Submit(nested) => {
+                    if let Some(slot) = Self::task_capture_slot(nested, local_types) {
+                        return Some(slot);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     fn expression(&mut self, min_precedence: u8) -> Result<StaticType, String> {
         let mut expression_type = match self.take() {
             TokenKind::Number(value) => {
@@ -521,6 +538,9 @@ impl Parser {
                             return Err("worker task must produce an integer".into());
                         }
                         let mut task_code = std::mem::replace(&mut self.code, outer_code);
+                        if let Some(slot) = Self::task_capture_slot(&task_code, &self.local_types) {
+                            return Err(format!("worker.submit cannot capture task handle in local slot {slot}"));
+                        }
                         task_code.push(Instruction::Halt);
                         self.eat(TokenKind::RBrace)?;
                         self.code.push(Instruction::Submit(task_code));
