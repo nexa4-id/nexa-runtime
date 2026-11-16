@@ -185,10 +185,17 @@ impl Parser {
             self.scopes = vec![params.clone()];
             self.code.clear();
             self.loops.clear();
+            let mut definitely_returns = false;
             while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof {
-                self.statement()?;
+                if definitely_returns {
+                    return Err(format!("unreachable statement in function '{name}'"));
+                }
+                definitely_returns = self.statement()?;
             }
             self.eat(TokenKind::RBrace)?;
+            if name != "main" && !definitely_returns {
+                return Err(format!("function '{name}' may finish without returning an integer"));
+            }
             let mut body = std::mem::take(&mut self.code);
             body.push(Instruction::Const(0));
             body.push(Instruction::Return);
@@ -233,17 +240,21 @@ impl Parser {
         }
         Ok(())
     }
-    fn block(&mut self) -> Result<(), String> {
+    fn block(&mut self) -> Result<bool, String> {
         self.eat(TokenKind::LBrace)?;
         self.enter_scope();
+        let mut definitely_returns = false;
         while *self.kind() != TokenKind::RBrace && *self.kind() != TokenKind::Eof {
-            self.statement()?;
+            if definitely_returns {
+                return Err("unreachable statement in block".into());
+            }
+            definitely_returns = self.statement()?;
         }
         self.eat(TokenKind::RBrace)?;
         self.leave_scope();
-        Ok(())
+        Ok(definitely_returns)
     }
-    fn statement(&mut self) -> Result<(), String> {
+    fn statement(&mut self) -> Result<bool, String> {
         match self.take() {
             TokenKind::Let => {
                 let name = self.ident()?;
@@ -251,7 +262,8 @@ impl Parser {
                 let ty = self.expression(0)?;
                 let slot = self.declare(name, ty)?;
                 self.code.push(Instruction::Store(slot));
-                self.eat(TokenKind::Semicolon)
+                self.eat(TokenKind::Semicolon)?;
+                Ok(false)
             }
             TokenKind::Ident(name) => {
                 self.eat(TokenKind::Equal)?;
@@ -266,7 +278,8 @@ impl Parser {
                     ));
                 }
                 self.code.push(Instruction::Store(slot));
-                self.eat(TokenKind::Semicolon)
+                self.eat(TokenKind::Semicolon)?;
+                Ok(false)
             }
             TokenKind::Print => {
                 self.eat(TokenKind::LParen)?;
@@ -277,7 +290,7 @@ impl Parser {
                 self.eat(TokenKind::RParen)?;
                 self.eat(TokenKind::Semicolon)?;
                 self.code.push(Instruction::Print);
-                Ok(())
+                Ok(false)
             }
             TokenKind::If => self.if_statement(),
             TokenKind::While => self.while_statement(),
@@ -286,7 +299,7 @@ impl Parser {
                 let jumps = self.loops.last_mut().ok_or("'break' used outside a loop")?;
                 jumps.push(self.code.len());
                 self.code.push(Instruction::Jump(usize::MAX));
-                Ok(())
+                Ok(false)
             }
             TokenKind::Continue => {
                 self.eat(TokenKind::Semicolon)?;
@@ -296,7 +309,7 @@ impl Parser {
                     .ok_or("'continue' used outside a loop")?;
                 jumps.push(usize::MAX - self.code.len());
                 self.code.push(Instruction::Jump(usize::MAX));
-                Ok(())
+                Ok(false)
             }
             TokenKind::Return => {
                 let ty = self.expression(0)?;
@@ -305,12 +318,12 @@ impl Parser {
                 }
                 self.eat(TokenKind::Semicolon)?;
                 self.code.push(Instruction::Return);
-                Ok(())
+                Ok(true)
             }
             other => Err(format!("unsupported statement {other:?}")),
         }
     }
-    fn if_statement(&mut self) -> Result<(), String> {
+    fn if_statement(&mut self) -> Result<bool, String> {
         self.eat(TokenKind::LParen)?;
         let condition_type = self.expression(0)?;
         if condition_type != StaticType::Int {
@@ -319,28 +332,29 @@ impl Parser {
         self.eat(TokenKind::RParen)?;
         let branch = self.code.len();
         self.code.push(Instruction::JumpIfFalse(usize::MAX));
-        self.block()?;
+        let then_returns = self.block()?;
         if *self.kind() == TokenKind::Else {
             self.take();
             let end_jump = self.code.len();
             self.code.push(Instruction::Jump(usize::MAX));
             let else_start = self.code.len();
             self.code[branch] = Instruction::JumpIfFalse(else_start);
-            if *self.kind() == TokenKind::If {
+            let else_returns = if *self.kind() == TokenKind::If {
                 self.take();
-                self.if_statement()?;
+                self.if_statement()?
             } else {
-                self.block()?;
-            }
+                self.block()?
+            };
             let end = self.code.len();
             self.code[end_jump] = Instruction::Jump(end);
+            Ok(then_returns && else_returns)
         } else {
             let end = self.code.len();
             self.code[branch] = Instruction::JumpIfFalse(end);
+            Ok(false)
         }
-        Ok(())
     }
-    fn while_statement(&mut self) -> Result<(), String> {
+    fn while_statement(&mut self) -> Result<bool, String> {
         let condition = self.code.len();
         self.eat(TokenKind::LParen)?;
         let condition_type = self.expression(0)?;
@@ -366,7 +380,7 @@ impl Parser {
                 self.code[encoded] = Instruction::Jump(end);
             }
         }
-        Ok(())
+        Ok(false)
     }
     fn expression(&mut self, min_precedence: u8) -> Result<StaticType, String> {
         let mut expression_type = match self.take() {
