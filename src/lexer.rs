@@ -160,7 +160,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod typed_signature_tests {
     use super::*;
