@@ -188,7 +188,8 @@ impl Vm {
         // so a slot is usable only if every incoming path initializes it.
         let mut states: Vec<Option<(Vec<StackType>, Vec<Option<StackType>>)>> =
             vec![None; code.len() + 1];
-        let mut pending = VecDeque::from([(0usize, Vec::<StackType>::new(), initial_locals)]);
+        let mut pending = VecDeque::new();
+        pending.push_back((0usize, Vec::<StackType>::new(), initial_locals));
 
         while let Some((pc, incoming_stack, incoming_locals)) = pending.pop_front() {
             if pc > code.len() {
