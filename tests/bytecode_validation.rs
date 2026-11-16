@@ -52,7 +52,7 @@ fn verifier_rejects_stack_underflow_before_execution() {
 }
 
 #[test]
-fn verifier_rejects_branch_path_with_wrong_return_stack_depth() {
+fn verifier_rejects_inconsistent_stack_types_at_branch_merge() {
     let code = vec![Instruction::DefineFunction(
         "main".into(),
         vec![],
@@ -66,7 +66,7 @@ fn verifier_rejects_branch_path_with_wrong_return_stack_depth() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("requires exactly one Int value"), "{error}");
+    assert!(error.contains("inconsistent stack types"), "{error}");
 }
 
 #[test]
