@@ -32,8 +32,7 @@ fn wait_requires_a_task_handle() {
 
 #[test]
 fn local_assignment_cannot_change_inferred_type() {
-    let error = compiler::compile("fn main(){let task=worker.submit{1};task=2;}")
-        .unwrap_err();
+    let error = compiler::compile("fn main(){let task=worker.submit{1};task=2;}").unwrap_err();
     assert!(error.contains("cannot assign"), "{error}");
 }
 
