@@ -105,7 +105,11 @@ fn verifier_rejects_return_with_wrong_stack_depth() {
     let code = vec![Instruction::DefineFunction(
         "main".into(),
         vec![],
-        vec![Instruction::Const(1), Instruction::Const(2), Instruction::Return],
+        vec![
+            Instruction::Const(1),
+            Instruction::Const(2),
+            Instruction::Return,
+        ],
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
@@ -156,7 +160,11 @@ fn verifier_rejects_gapped_local_slot_layout() {
     let code = vec![Instruction::DefineFunction(
         "main".into(),
         vec![],
-        vec![Instruction::Const(1), Instruction::Store(2), Instruction::Return],
+        vec![
+            Instruction::Const(1),
+            Instruction::Store(2),
+            Instruction::Return,
+        ],
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
@@ -254,7 +262,13 @@ fn verifier_accepts_initialized_parameters() {
         Instruction::DefineFunction(
             "main".into(),
             vec![],
-            vec![Instruction::Const(7), Instruction::Call("identity".into(), 1), Instruction::Print, Instruction::Const(0), Instruction::Return],
+            vec![
+                Instruction::Const(7),
+                Instruction::Call("identity".into(), 1),
+                Instruction::Print,
+                Instruction::Const(0),
+                Instruction::Return,
+            ],
         ),
         Instruction::DefineFunction(
             "identity".into(),
@@ -265,7 +279,6 @@ fn verifier_accepts_initialized_parameters() {
     let mut vm = Vm::new(1).unwrap();
     assert_eq!(vm.run(&code).unwrap(), &["7".to_string()]);
 }
-
 
 #[test]
 fn verifier_rejects_task_handle_used_by_integer_operator() {
@@ -368,7 +381,6 @@ fn verifier_rejects_different_local_types_at_branch_merge() {
     assert!(error.contains("inconsistent local types"), "{error}");
 }
 
-
 #[test]
 fn verifier_rejects_function_fallthrough_without_return() {
     let code = vec![Instruction::DefineFunction(
@@ -390,7 +402,10 @@ fn verifier_rejects_halt_as_a_function_terminator() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("Halt is invalid") && error.contains("expected Return"), "{error}");
+    assert!(
+        error.contains("Halt is invalid") && error.contains("expected Return"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -407,7 +422,10 @@ fn verifier_rejects_return_as_a_worker_terminator() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("Return is invalid") && error.contains("expected Halt"), "{error}");
+    assert!(
+        error.contains("Return is invalid") && error.contains("expected Halt"),
+        "{error}"
+    );
 }
 
 #[test]
