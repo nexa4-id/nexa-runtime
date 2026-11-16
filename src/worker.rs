@@ -78,8 +78,6 @@ impl WorkerPool {
 
         for index in 0..worker_count {
             let (sender, receiver) = mpsc::channel::<Message>();
-            let completed_count = Arc::clone(&completed);
-            let pending_count = Arc::clone(&pending);
             let name = format!("nexa-worker-{index}");
             let handle = thread::Builder::new()
                 .name(name)
@@ -88,8 +86,6 @@ impl WorkerPool {
                         match message {
                             Message::Run(job) => {
                                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
-                                pending_count.fetch_sub(1, Ordering::AcqRel);
-                                completed_count.fetch_add(1, Ordering::Relaxed);
                             }
                             Message::Shutdown => break,
                         }
@@ -119,6 +115,8 @@ impl WorkerPool {
         let (result_sender, result_receiver) = mpsc::channel();
         self.submitted.fetch_add(1, Ordering::Relaxed);
         self.pending.fetch_add(1, Ordering::AcqRel);
+        let pending_count = Arc::clone(&self.pending);
+        let completed_count = Arc::clone(&self.completed);
 
         let job = Box::new(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task)).map_err(
@@ -127,6 +125,8 @@ impl WorkerPool {
                     TaskError::Panicked
                 },
             );
+            pending_count.fetch_sub(1, Ordering::AcqRel);
+            completed_count.fetch_add(1, Ordering::Relaxed);
             let _ = result_sender.send(result);
         });
 
