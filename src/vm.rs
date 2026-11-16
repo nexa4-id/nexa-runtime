@@ -127,6 +127,7 @@ impl Vm {
             functions,
             signatures,
             owner,
+            signature.return_type,
             false,
         )
     }
@@ -137,6 +138,7 @@ impl Vm {
         functions: &Functions,
         signatures: &Signatures,
         owner: &str,
+        return_type: StackType,
         worker_body: bool,
     ) -> Result<(), String> {
         if code.is_empty() {
@@ -273,6 +275,7 @@ impl Vm {
                         functions,
                         signatures,
                         owner,
+                        StackType::Int,
                         true,
                     )?;
                     stack.push(StackType::Task);
@@ -325,11 +328,7 @@ impl Vm {
                             if worker_body { "Halt" } else { "Return" }
                         ));
                     }
-                    let expected = if worker_body {
-                        StackType::Int
-                    } else {
-                        StackType::Int
-                    };
+                    let expected = return_type;
                     if stack.as_slice() != [expected] {
                         return Err(format!(
                             "{} in '{owner}' requires exactly one {expected:?} value, found {stack:?}",
