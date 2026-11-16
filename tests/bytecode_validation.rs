@@ -506,3 +506,44 @@ fn verifier_rejects_task_handle_as_function_return_value() {
         "{error}"
     );
 }
+
+
+#[test]
+fn verifier_rejects_conflicting_local_types_at_cfg_merge() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::JumpIfFalse(5),
+            Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+            Instruction::Store(0),
+            Instruction::Jump(7),
+            Instruction::Const(2),
+            Instruction::Store(0),
+            Instruction::Load(0),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Return,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("inconsistent local types"), "{error}");
+}
+
+#[test]
+fn verifier_checks_invalid_local_load_even_in_unreachable_code() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(0),
+            Instruction::Return,
+            Instruction::Load(9),
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("invalid local slot 9"), "{error}");
+}
