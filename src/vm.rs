@@ -34,10 +34,15 @@ impl Vm {
         let mut functions = Functions::new();
         for instruction in code {
             let definition = match instruction {
-                Instruction::DefineFunction(name, params, body) => Some((name, params.clone(), body.clone())),
+                Instruction::DefineFunction(name, params, body) => {
+                    Some((name, params.clone(), body.clone()))
+                }
                 Instruction::DefineTypedFunction(name, params, _, body) => Some((
                     name,
-                    params.iter().map(|(parameter, _)| parameter.clone()).collect(),
+                    params
+                        .iter()
+                        .map(|(parameter, _)| parameter.clone())
+                        .collect(),
                     body.clone(),
                 )),
                 _ => None,
@@ -60,31 +65,44 @@ impl Vm {
                     let mut unique_params = HashSet::new();
                     for param in params {
                         if !unique_params.insert(param) {
-                            return Err(format!("duplicate parameter '{param}' in function '{name}'"));
+                            return Err(format!(
+                                "duplicate parameter '{param}' in function '{name}'"
+                            ));
                         }
                     }
-                    signatures.insert(name.clone(), FunctionSignature {
-                        parameter_types: vec![StackType::Int; params.len()],
-                        return_type: StackType::Int,
-                    });
+                    signatures.insert(
+                        name.clone(),
+                        FunctionSignature {
+                            parameter_types: vec![StackType::Int; params.len()],
+                            return_type: StackType::Int,
+                        },
+                    );
                 }
                 Instruction::DefineTypedFunction(name, params, returns, _) => {
                     let mut unique_params = HashSet::new();
                     for (param, _) in params {
                         if !unique_params.insert(param) {
-                            return Err(format!("duplicate parameter '{param}' in function '{name}'"));
+                            return Err(format!(
+                                "duplicate parameter '{param}' in function '{name}'"
+                            ));
                         }
                     }
-                    signatures.insert(name.clone(), FunctionSignature {
-                        parameter_types: params.iter().map(|(_, ty)| match ty {
-                            ValueType::Int => StackType::Int,
-                            ValueType::Task => StackType::Task,
-                        }).collect(),
-                        return_type: match returns {
-                            ValueType::Int => StackType::Int,
-                            ValueType::Task => StackType::Task,
+                    signatures.insert(
+                        name.clone(),
+                        FunctionSignature {
+                            parameter_types: params
+                                .iter()
+                                .map(|(_, ty)| match ty {
+                                    ValueType::Int => StackType::Int,
+                                    ValueType::Task => StackType::Task,
+                                })
+                                .collect(),
+                            return_type: match returns {
+                                ValueType::Int => StackType::Int,
+                                ValueType::Task => StackType::Task,
+                            },
                         },
-                    });
+                    );
                 }
                 _ => {}
             }
