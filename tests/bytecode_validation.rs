@@ -161,3 +161,106 @@ fn verifier_rejects_gapped_local_slot_layout() {
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("invalid local slot layout"), "{error}");
 }
+
+#[test]
+fn verifier_rejects_local_initialized_on_only_one_branch() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::JumpIfFalse(5),
+            Instruction::Const(10),
+            Instruction::Store(0),
+            Instruction::Jump(6),
+            Instruction::Jump(6),
+            Instruction::Load(0),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("uninitialized"), "{error}");
+}
+
+#[test]
+fn verifier_accepts_local_initialized_on_both_branches() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::JumpIfFalse(5),
+            Instruction::Const(10),
+            Instruction::Store(0),
+            Instruction::Jump(7),
+            Instruction::Const(20),
+            Instruction::Store(0),
+            Instruction::Load(0),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    assert_eq!(vm.run(&code).unwrap(), &["10".to_string()]);
+}
+
+#[test]
+fn verifier_rejects_local_initialized_only_inside_loop() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::JumpIfFalse(5),
+            Instruction::Const(9),
+            Instruction::Store(0),
+            Instruction::Jump(0),
+            Instruction::Load(0),
+            Instruction::Print,
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("uninitialized"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_worker_capture_before_local_initialization() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Submit(vec![Instruction::Load(0), Instruction::Halt]),
+            Instruction::Store(0),
+            Instruction::Const(0),
+            Instruction::Halt,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("uninitialized"), "{error}");
+}
+
+#[test]
+fn verifier_accepts_initialized_parameters() {
+    let code = vec![
+        Instruction::DefineFunction(
+            "main".into(),
+            vec![],
+            vec![Instruction::Const(7), Instruction::Call("identity".into(), 1), Instruction::Print, Instruction::Const(0), Instruction::Halt],
+        ),
+        Instruction::DefineFunction(
+            "identity".into(),
+            vec!["value".into()],
+            vec![Instruction::Load(0), Instruction::Return],
+        ),
+    ];
+    let mut vm = Vm::new(1).unwrap();
+    assert_eq!(vm.run(&code).unwrap(), &["7".to_string()]);
+}
