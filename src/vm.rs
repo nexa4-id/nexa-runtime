@@ -395,7 +395,7 @@ impl Vm {
                     }
                     continue;
                 }
-                Instruction::DefineFunction(..) => {
+                Instruction::DefineFunction(..) | Instruction::DefineTypedFunction(..) => {
                     return Err(format!("nested function definition in '{owner}'"));
                 }
             }
