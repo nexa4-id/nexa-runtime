@@ -20,7 +20,8 @@ Expected output for `worker-basic.nx` is `42`; expected output for `control-flow
 - Operators: `== != < <= > >=`, `+ - * /`.
 - Output: `print(expression);`.
 - Native tasks: `worker.submit { expression }` captures active integer locals by value; `worker.wait(task)` consumes a task handle once.
-- Compile-time semantic checks: duplicate declarations/functions/parameters, unknown variables/functions, invalid function arity, loop control outside a loop, task-handle misuse, and non-integer operator/print/return/worker results are rejected.
+- Compile-time semantic checks: duplicate declarations/functions/parameters, unknown variables/functions, invalid function arity, loop control outside a loop, task-handle misuse, non-integer operator/print/return/worker results, missing function return paths, and unreachable statements after guaranteed returns are rejected.
+- Control-flow validation: non-`main` functions must return an integer on every statically guaranteed path; `if`/`else` branches are analyzed, while loops are not assumed to execute. The VM validates jump targets, including nested worker bytecode, before execution.
 
 ## Current limitations
 
