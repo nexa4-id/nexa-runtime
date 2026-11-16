@@ -65,3 +65,70 @@ fn task_handles_are_rejected_in_conditions_and_function_arguments() {
         "{argument}"
     );
 }
+
+
+#[test]
+fn typed_function_signatures_accept_int_and_task_parameters_and_returns() {
+    let source = r#"
+        fn wait_task(task: task) -> int {
+            return worker.wait(task);
+        }
+        fn make_task() -> task {
+            return worker.submit { 40 + 2 };
+        }
+        fn main() {
+            let result = wait_task(make_task());
+            print(result);
+        }
+    "#;
+    assert!(compiler::compile(source).is_ok());
+}
+
+#[test]
+fn typed_function_signatures_support_forward_calls_and_task_identity() {
+    let source = r#"
+        fn main() {
+            let task = identity(make_task());
+            print(worker.wait(task));
+        }
+        fn identity(value: task) -> task {
+            return value;
+        }
+        fn make_task() -> task {
+            return worker.submit { 42 };
+        }
+    "#;
+    assert!(compiler::compile(source).is_ok());
+}
+
+#[test]
+fn typed_function_calls_reject_wrong_argument_types() {
+    let int_to_task = compiler::compile(
+        "fn needs_task(value: task) -> int { return worker.wait(value); } fn main() { print(needs_task(1)); }"
+    ).unwrap_err();
+    assert!(int_to_task.contains("expects Task"), "{int_to_task}");
+
+    let task_to_int = compiler::compile(
+        "fn needs_int(value: int) -> int { return value; } fn main() { let t=worker.submit{1}; print(needs_int(t)); }"
+    ).unwrap_err();
+    assert!(task_to_int.contains("expects Int"), "{task_to_int}");
+}
+
+#[test]
+fn typed_function_return_contract_rejects_wrong_types() {
+    let wrong_return = compiler::compile(
+        "fn make_task() -> task { return 7; } fn main() {}"
+    ).unwrap_err();
+    assert!(wrong_return.contains("return type mismatch"), "{wrong_return}");
+
+    let missing_return = compiler::compile(
+        "fn make_task() -> task { let value=1; } fn main() {}"
+    ).unwrap_err();
+    assert!(missing_return.contains("may finish without returning"), "{missing_return}");
+}
+
+#[test]
+fn legacy_unannotated_functions_remain_integer_typed() {
+    let source = "fn identity(value) { return value; } fn main() { print(identity(42)); }";
+    assert!(compiler::compile(source).is_ok());
+}
