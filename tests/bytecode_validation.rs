@@ -110,3 +110,42 @@ fn verifier_rejects_return_with_wrong_stack_depth() {
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("requires exactly one stack value"), "{error}");
 }
+
+#[test]
+fn verifier_checks_invalid_jump_even_in_unreachable_code() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Const(1),
+            Instruction::Return,
+            Instruction::Jump(99),
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("invalid bytecode jump"), "{error}");
+}
+
+#[test]
+fn verifier_checks_call_arity_even_in_unreachable_code() {
+    let code = vec![
+        Instruction::DefineFunction(
+            "main".into(),
+            vec![],
+            vec![
+                Instruction::Const(1),
+                Instruction::Return,
+                Instruction::Call("one".into(), 0),
+            ],
+        ),
+        Instruction::DefineFunction(
+            "one".into(),
+            vec!["value".into()],
+            vec![Instruction::Load(0), Instruction::Return],
+        ),
+    ];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("expects 1 argument"), "{error}");
+}
