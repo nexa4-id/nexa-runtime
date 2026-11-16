@@ -20,6 +20,7 @@ impl Vm {
         let mut functions = Functions::new();
         for instruction in code {
             if let Instruction::DefineFunction(name, params, body) = instruction {
+                Self::validate_bytecode(body)?;
                 if functions
                     .insert(name.clone(), (params.clone(), body.clone()))
                     .is_some()
@@ -44,6 +45,24 @@ impl Vm {
         )?;
         Ok(&self.output)
     }
+    fn validate_bytecode(code: &[Instruction]) -> Result<(), String> {
+        for (index, instruction) in code.iter().enumerate() {
+            match instruction {
+                Instruction::Jump(target) | Instruction::JumpIfFalse(target)
+                    if *target > code.len() =>
+                {
+                    return Err(format!(
+                        "invalid bytecode jump at instruction {index}: target {target} exceeds code length {}",
+                        code.len()
+                    ));
+                }
+                Instruction::Submit(body) => Self::validate_bytecode(body)?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     fn execute(
         code: &[Instruction],
         stack: &mut Vec<i64>,
