@@ -64,6 +64,22 @@ impl Vm {
                 frame_slots = frame_slots.max(required_slots);
             }
         }
+
+        let mut declared_slots = vec![false; frame_slots];
+        for slot in declared_slots.iter_mut().take(parameter_count) {
+            *slot = true;
+        }
+        for instruction in code {
+            if let Instruction::Store(slot) = instruction {
+                declared_slots[*slot] = true;
+            }
+        }
+        if let Some(slot) = declared_slots.iter().position(|declared| !declared) {
+            return Err(format!(
+                "invalid local slot layout in '{owner}': slot {slot} is undeclared"
+            ));
+        }
+
         let mut initial_slots = vec![false; frame_slots];
         for slot in initial_slots.iter_mut().take(parameter_count) {
             *slot = true;
@@ -88,14 +104,10 @@ impl Vm {
             return Err(format!("invalid local frame layout in '{owner}'"));
         }
 
-        let mut declared_slots = initial_slots.clone();
         for (index, instruction) in code.iter().enumerate() {
             match instruction {
-                Instruction::Store(slot) => {
-                    if *slot >= frame_slots {
-                        return Err(format!("invalid local slot {slot} in '{owner}'"));
-                    }
-                    declared_slots[*slot] = true;
+                Instruction::Store(slot) if *slot >= frame_slots => {
+                    return Err(format!("invalid local slot {slot} in '{owner}'"));
                 }
                 Instruction::Jump(target) | Instruction::JumpIfFalse(target)
                     if *target > code.len() =>
@@ -119,19 +131,15 @@ impl Vm {
                 _ => {}
             }
         }
-        if let Some(slot) = declared_slots.iter().position(|declared| !declared) {
-            return Err(format!(
-                "invalid local slot layout in '{owner}': slot {slot} is undeclared"
-            ));
-        }
 
         let mut depths: Vec<Option<usize>> = vec![None; code.len() + 1];
         let mut initialized: Vec<Option<Vec<bool>>> = vec![None; code.len() + 1];
         let mut pending = vec![(0usize, 0usize, initial_slots)];
-        while let Some((pc, depth, slots)) = pending.pop() {
+        while let Some((pc, depth, mut slots)) = pending.pop() {
             if pc > code.len() {
                 return Err(format!("invalid bytecode control-flow target in '{owner}'"));
             }
+
             if let Some(previous_depth) = depths[pc] {
                 if previous_depth != depth {
                     return Err(format!(
@@ -146,14 +154,16 @@ impl Vm {
                     .zip(slots.iter())
                     .map(|(left, right)| *left && *right)
                     .collect();
-                if &merged != previous_slots {
-                    initialized[pc] = Some(merged.clone());
-                    pending.push((pc, depth, merged));
+                if &merged == previous_slots {
+                    continue;
                 }
-                continue;
+                initialized[pc] = Some(merged.clone());
+                slots = merged;
+            } else {
+                depths[pc] = Some(depth);
+                initialized[pc] = Some(slots.clone());
             }
-            depths[pc] = Some(depth);
-            initialized[pc] = Some(slots.clone());
+
             if pc == code.len() {
                 if depth != 0 {
                     return Err(format!(
@@ -228,23 +238,23 @@ impl Vm {
                     return Err(format!("nested function definition in '{owner}'"));
                 }
             };
+
             if depth < required {
                 return Err(format!(
                     "stack underflow in '{owner}' at instruction {pc}: needs {required}, has {depth}"
                 ));
             }
             let next_depth = depth - required + produced;
-            let mut next_slots = slots;
             if let Instruction::Store(slot) = instruction {
-                next_slots[*slot] = true;
+                slots[*slot] = true;
             }
             match instruction {
-                Instruction::Jump(target) => pending.push((*target, next_depth, next_slots)),
+                Instruction::Jump(target) => pending.push((*target, next_depth, slots)),
                 Instruction::JumpIfFalse(target) => {
-                    pending.push((*target, next_depth, next_slots.clone()));
-                    pending.push((pc + 1, next_depth, next_slots));
+                    pending.push((*target, next_depth, slots.clone()));
+                    pending.push((pc + 1, next_depth, slots));
                 }
-                _ => pending.push((pc + 1, next_depth, next_slots)),
+                _ => pending.push((pc + 1, next_depth, slots)),
             }
         }
         Ok(())
