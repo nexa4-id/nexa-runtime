@@ -61,7 +61,7 @@ fn line_column(source: &str, offset: usize) -> (usize, usize) {
     let mut line = 1;
     let mut column = 1;
     for ch in source.chars().take(offset) {
-        if ch == '\\n' {
+        if ch == '\n' {
             line += 1;
             column = 1;
         } else {
