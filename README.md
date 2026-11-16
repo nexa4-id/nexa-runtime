@@ -64,3 +64,6 @@ The compiler pre-collects signatures before compiling bodies, so forward calls a
 ### Linear task-handle ownership
 
 Task handles are move-only values. Loading a task local transfers ownership to the expression; waiting, passing, or returning the value consumes that local. The compiler tracks moved handles across branches and loops. The VM verifier independently marks task locals moved on load, rejects a second load, and prevents overwriting a still-live handle.
+
+
+The compiler rejects ownership changes that occur on only one side of a conditional or inside a loop, where execution may skip or repeat the transfer. Both branches must leave each task local in the same ownership state. The VM applies the same rule to bytecode control-flow merges, including hand-authored bytecode.
