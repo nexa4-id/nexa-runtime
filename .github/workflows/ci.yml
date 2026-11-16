@@ -37,23 +37,8 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Format source snapshot
-        run: cargo fmt --all
-
       - name: Check formatting
         run: cargo fmt --all -- --check
-
-      - name: Upload formatted Rust sources
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: nexa-rustfmt-snapshot
-          path: |
-            src/**/*.rs
-            tests/**/*.rs
-            examples/**/*.rs
-          if-no-files-found: error
-          retention-days: 1
 
       - name: Check all targets
         run: cargo check --all-targets
