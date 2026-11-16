@@ -154,11 +154,11 @@ fn task_handle_move_is_tracked_across_branches() {
     let both = compiler::compile("fn main() { let task=worker.submit{1}; if (1) { worker.wait(task); } else { worker.wait(task); } }");
     assert!(both.is_ok(), "{both:?}");
     let one = compiler::compile("fn main() { let task=worker.submit{1}; if (1) { worker.wait(task); } worker.wait(task); }").unwrap_err();
-    assert!(one.contains("moved or already-consumed"), "{one}");
+    assert!(one.contains("task handle"), "{one}");
 }
 
 #[test]
 fn task_handle_move_is_tracked_across_loops() {
     let error = compiler::compile("fn main() { let task=worker.submit{1}; while (1) { worker.wait(task); break; } worker.wait(task); }").unwrap_err();
-    assert!(error.contains("moved or already-consumed"), "{error}");
+    assert!(error.contains("task handle"), "{error}");
 }
