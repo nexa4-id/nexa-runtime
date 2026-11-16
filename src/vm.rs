@@ -56,9 +56,37 @@ impl Vm {
         owner: &str,
     ) -> Result<(), String> {
         let mut frame_slots = parameter_count;
-        for instruction in code {
-            if let Instruction::Store(slot) = instruction {
-                frame_slots = frame_slots.max(slot + 1);
+        for (index, instruction) in code.iter().enumerate() {
+            match instruction {
+                Instruction::Store(slot) => {
+                    let required_slots = slot.checked_add(1).ok_or_else(|| {
+                        format!("invalid local slot {slot} in '{owner}'")
+                    })?;
+                    frame_slots = frame_slots.max(required_slots);
+                }
+                Instruction::Jump(target) | Instruction::JumpIfFalse(target)
+                    if *target > code.len() =>
+                {
+                    return Err(format!(
+                        "invalid bytecode jump at instruction {index}: target {target} exceeds code length {}",
+                        code.len()
+                    ));
+                }
+                Instruction::Call(name, argc) => {
+                    let (params, _) = functions.get(name).ok_or_else(|| {
+                        format!("'{owner}' calls unknown function '{name}'")
+                    })?;
+                    if params.len() != *argc {
+                        return Err(format!(
+                            "function '{name}' expects {} argument(s), got {argc}",
+                            params.len()
+                        ));
+                    }
+                }
+                Instruction::Submit(body) => {
+                    Self::validate_bytecode(body, frame_slots, functions, owner)?;
+                }
+                _ => {}
             }
         }
         let mut depths: Vec<Option<usize>> = vec![None; code.len() + 1];
@@ -103,10 +131,7 @@ impl Vm {
                 | Instruction::Eq | Instruction::Ne | Instruction::Lt | Instruction::Le
                 | Instruction::Gt | Instruction::Ge => (2, 1),
                 Instruction::Print | Instruction::Pop | Instruction::JumpIfFalse(_) => (1, 0),
-                Instruction::Submit(body) => {
-                    Self::validate_bytecode(body, frame_slots, functions, owner)?;
-                    (0, 1)
-                }
+                Instruction::Submit(_) => (0, 1),
                 Instruction::Wait => (1, 1),
                 Instruction::Jump(_) => (0, 0),
                 Instruction::Call(name, argc) => {
