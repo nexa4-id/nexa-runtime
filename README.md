@@ -1,22 +1,18 @@
 # Nexa 0.3
-
-A small Rust-hosted language runtime. This milestone adds a lexer, expression parser/compiler, stack VM, and language-level native worker submission/wait.
+A Rust-hosted language runtime with a lexer, parser/compiler, stack VM, and native worker pool.
 
 ## Run
-
 ```sh
 cargo run -- run examples/worker-basic.nx --workers 4
+cargo run -- run examples/control-flow.nx --workers 4
 ```
+The worker example is intended to print `42`; the control-flow example prints `15`.
 
-Expected output: `42`.
+## Language subset
+- `fn name(params) { ... }`, calls, and `return expression;` (integer arguments/results; recursion supported).
+- Integer `let` declarations and reassignment of existing locals.
+- `if (condition) { ... } else { ... }`, `while (condition) { ... }`.
+- Comparisons `== != < <= > >=`, arithmetic `+ - * /`, and `print(expr);`.
+- `worker.submit { expression }` captures integer locals by value; `worker.wait(task)` consumes a task handle once.
 
-## Validate
-
-```sh
-cargo fmt --all -- --check
-cargo check --all-targets
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-```
-
-Supported language subset: `fn main() { ... }`, integer `let` bindings, `print(expr)`, integer arithmetic, `worker.submit { expr }`, and `worker.wait(task)`. Worker blocks capture currently defined integer locals by value at submission time. Handles are single-use. The parser/compiler and VM are intentionally small; functions, strings, types, modules, and general control flow are not implemented yet.
+This remains a deliberately small integer language: no strings, static type system, closures, break/continue, or modules yet.

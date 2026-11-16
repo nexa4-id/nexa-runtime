@@ -1,2 +1,26 @@
-#[derive(Debug,Clone,PartialEq)]pub enum TokenKind{Fn,Let,Print,Worker,Submit,Wait,Ident(String),Number(i64),LParen,RParen,LBrace,RBrace,Semicolon,Equal,Dot,Plus,Minus,Star,Slash,Eof}#[derive(Debug,Clone,PartialEq)]pub struct Token{pub kind:TokenKind,pub offset:usize}
-pub fn lex(s:&str)->Result<Vec<Token>,String>{let c:Vec<char>=s.chars().collect();let(mut i,mut o)=(0,Vec::new());while i<c.len(){let x=c[i];if x.is_whitespace(){i+=1;continue}if x.is_ascii_digit(){let b=i;while i<c.len()&&c[i].is_ascii_digit(){i+=1}let n:String=c[b..i].iter().collect();o.push(Token{kind:TokenKind::Number(n.parse().map_err(|_|format!("integer overflow at {b}"))?),offset:b});continue}if x.is_ascii_alphabetic()||x=='_'{let b=i;while i<c.len()&&(c[i].is_ascii_alphanumeric()||c[i]=='_'){i+=1}let w:String=c[b..i].iter().collect();let k=match w.as_str(){"fn"=>TokenKind::Fn,"let"=>TokenKind::Let,"print"=>TokenKind::Print,"worker"=>TokenKind::Worker,"submit"=>TokenKind::Submit,"wait"=>TokenKind::Wait,_=>TokenKind::Ident(w)};o.push(Token{kind:k,offset:b});continue}let k=match x{'('=>TokenKind::LParen,')'=>TokenKind::RParen,'{'=>TokenKind::LBrace,'}'=>TokenKind::RBrace,';'=>TokenKind::Semicolon,'='=>TokenKind::Equal,'.'=>TokenKind::Dot,'+'=>TokenKind::Plus,'-'=>TokenKind::Minus,'*'=>TokenKind::Star,'/'=>TokenKind::Slash,_=>return Err(format!("unexpected character {x} at {i}"))};o.push(Token{kind:k,offset:i});i+=1}o.push(Token{kind:TokenKind::Eof,offset:c.len()});Ok(o)}
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenKind {
+ Fn, Let, Print, Worker, Submit, Wait, If, Else, While, Return,
+ Ident(String), Number(i64),
+ LParen, RParen, LBrace, RBrace, Semicolon, Comma, Dot,
+ Equal, EqualEqual, BangEqual, Less, LessEqual, Greater, GreaterEqual,
+ Plus, Minus, Star, Slash, Eof,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token { pub kind: TokenKind, pub offset: usize }
+pub fn lex(source: &str) -> Result<Vec<Token>, String> {
+ let chars: Vec<char> = source.chars().collect(); let mut i=0; let mut out=Vec::new();
+ while i<chars.len() {
+  let c=chars[i]; if c.is_whitespace(){i+=1;continue;}
+  if c=='/' && chars.get(i+1)==Some(&'/') { i+=2; while i<chars.len()&&chars[i]!='\n'{i+=1;} continue; }
+  if c.is_ascii_digit(){let start=i;while i<chars.len()&&chars[i].is_ascii_digit(){i+=1;}let n:String=chars[start..i].iter().collect();out.push(Token{kind:TokenKind::Number(n.parse().map_err(|_|format!("integer overflow at {start}"))?),offset:start});continue;}
+  if c.is_ascii_alphabetic()||c=='_'{let start=i;while i<chars.len()&&(chars[i].is_ascii_alphanumeric()||chars[i]=='_'){i+=1;}let w:String=chars[start..i].iter().collect();let k=match w.as_str(){"fn"=>TokenKind::Fn,"let"=>TokenKind::Let,"print"=>TokenKind::Print,"worker"=>TokenKind::Worker,"submit"=>TokenKind::Submit,"wait"=>TokenKind::Wait,"if"=>TokenKind::If,"else"=>TokenKind::Else,"while"=>TokenKind::While,"return"=>TokenKind::Return,_=>TokenKind::Ident(w)};out.push(Token{kind:k,offset:start});continue;}
+  let next=chars.get(i+1).copied();let (kind,step)=match(c,next){
+   ('=',Some('='))=>(TokenKind::EqualEqual,2),('!',Some('='))=>(TokenKind::BangEqual,2),('<',Some('='))=>(TokenKind::LessEqual,2),('>',Some('='))=>(TokenKind::GreaterEqual,2),
+   ('=',_)=>(TokenKind::Equal,1),('<',_)=>(TokenKind::Less,1),('>',_)=>(TokenKind::Greater,1),
+   ('(',_) =>(TokenKind::LParen,1),(')',_)=>(TokenKind::RParen,1),('{',_)=>(TokenKind::LBrace,1),('}',_)=>(TokenKind::RBrace,1),(';',_)=>(TokenKind::Semicolon,1),(',',_)=>(TokenKind::Comma,1),('.',_)=>(TokenKind::Dot,1),('+',_)=>(TokenKind::Plus,1),('-',_)=>(TokenKind::Minus,1),('*',_)=>(TokenKind::Star,1),('/',_)=>(TokenKind::Slash,1),
+   _=>return Err(format!("unexpected character '{c}' at {i}"))
+  };out.push(Token{kind,offset:i});i+=step;
+ }
+ out.push(Token{kind:TokenKind::Eof,offset:chars.len()});Ok(out)
+}
