@@ -507,7 +507,6 @@ fn verifier_rejects_task_handle_as_function_return_value() {
     );
 }
 
-
 #[test]
 fn verifier_rejects_conflicting_local_types_at_cfg_merge() {
     let code = vec![Instruction::DefineFunction(
@@ -547,7 +546,6 @@ fn verifier_checks_invalid_local_load_even_in_unreachable_code() {
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("invalid local slot 9"), "{error}");
 }
-
 
 #[test]
 fn verifier_uses_typed_function_parameter_metadata() {
@@ -595,7 +593,6 @@ fn verifier_enforces_task_function_return_contract() {
     assert!(error.contains("requires exactly one Task"), "{error}");
 }
 
-
 #[test]
 fn verifier_rejects_worker_capture_of_task_handle() {
     let code = vec![Instruction::DefineTypedFunction(
@@ -605,7 +602,11 @@ fn verifier_rejects_worker_capture_of_task_handle() {
         vec![
             Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
             Instruction::Store(0),
-            Instruction::Submit(vec![Instruction::Load(0), Instruction::Wait, Instruction::Halt]),
+            Instruction::Submit(vec![
+                Instruction::Load(0),
+                Instruction::Wait,
+                Instruction::Halt,
+            ]),
             Instruction::Store(1),
             Instruction::Const(0),
             Instruction::Return,
