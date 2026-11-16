@@ -110,6 +110,23 @@ impl Vm {
         Ok(&self.output)
     }
 
+    fn task_capture_of_handle(code: &[Instruction], locals: &[Option<StackType>]) -> Option<usize> {
+        for instruction in code {
+            match instruction {
+                Instruction::Load(slot) if locals.get(*slot) == Some(&Some(StackType::Task)) => {
+                    return Some(*slot);
+                }
+                Instruction::Submit(nested) => {
+                    if let Some(slot) = Self::task_capture_of_handle(nested, locals) {
+                        return Some(slot);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     fn validate_bytecode(
         code: &[Instruction],
         signature: &FunctionSignature,
@@ -327,6 +344,11 @@ impl Vm {
                     })?;
                 }
                 Instruction::Submit(body) => {
+                    if let Some(slot) = Self::task_capture_of_handle(body, &locals) {
+                        return Err(format!(
+                            "worker.submit in '{owner}' cannot capture task handle in local slot {slot}"
+                        ));
+                    }
                     Self::validate_typed_bytecode(
                         body,
                         locals.clone(),
