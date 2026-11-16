@@ -142,7 +142,6 @@ fn worker_submit_cannot_capture_task_handle() {
     assert!(error.contains("cannot capture task handle"), "{error}");
 }
 
-
 #[test]
 fn task_handle_cannot_be_waited_twice() {
     let error = compiler::compile(
