@@ -149,3 +149,15 @@ fn verifier_checks_call_arity_even_in_unreachable_code() {
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("expects 1 argument"), "{error}");
 }
+
+#[test]
+fn verifier_rejects_gapped_local_slot_layout() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![Instruction::Const(1), Instruction::Store(2), Instruction::Return],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("invalid local slot layout"), "{error}");
+}
