@@ -55,6 +55,7 @@ pub fn compile(source: &str) -> Result<Vec<Instruction>, String> {
         pos: 0,
         locals: Vec::new(),
         local_types: Vec::new(),
+        task_moved: Vec::new(),
         scopes: Vec::new(),
         code: Vec::new(),
         loops: Vec::new(),
@@ -101,6 +102,7 @@ struct Parser {
     pos: usize,
     locals: Vec<String>,
     local_types: Vec<StaticType>,
+    task_moved: Vec<bool>,
     scopes: Vec<Vec<String>>,
     code: Vec<Instruction>,
     loops: Vec<Vec<usize>>,
@@ -162,6 +164,7 @@ impl Parser {
                 if self.locals.last() == Some(&name) {
                     self.locals.pop();
                     self.local_types.pop();
+                    self.task_moved.pop();
                 }
             }
         }
@@ -178,6 +181,7 @@ impl Parser {
         scope.push(name.clone());
         self.locals.push(name);
         self.local_types.push(ty);
+        self.task_moved.push(false);
         Ok(slot)
     }
     fn program(&mut self) -> Result<Vec<Instruction>, String> {
@@ -231,6 +235,7 @@ impl Parser {
             self.eat(TokenKind::LBrace)?;
             self.locals = params.clone();
             self.local_types = typed_params.iter().map(|(_, ty)| *ty).collect();
+            self.task_moved = vec![false; typed_params.len()];
             self.scopes = vec![params.clone()];
             self.current_return_type = return_type;
             self.code.clear();
@@ -266,6 +271,7 @@ impl Parser {
             ));
             self.locals.clear();
             self.local_types.clear();
+            self.task_moved.clear();
             self.scopes.clear();
         }
         if !self.function_types.contains_key("main") {
@@ -447,6 +453,12 @@ impl Parser {
                         self.local_types[slot]
                     ));
                 }
+                if ty == StaticType::Task {
+                    if !self.task_moved[slot] {
+                        return Err(format!("cannot overwrite live task handle '{name}'"));
+                    }
+                    self.task_moved[slot] = false;
+                }
                 self.code.push(Instruction::Store(slot));
                 self.eat(TokenKind::Semicolon)?;
                 Ok(false)
@@ -505,8 +517,11 @@ impl Parser {
         self.eat(TokenKind::RParen)?;
         let branch = self.code.len();
         self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        let before_branches = self.task_moved.clone();
         let then_returns = self.block()?;
+        let after_then = self.task_moved.clone();
         if *self.kind() == TokenKind::Else {
+            self.task_moved = before_branches.clone();
             self.take();
             let end_jump = self.code.len();
             self.code.push(Instruction::Jump(usize::MAX));
@@ -520,10 +535,14 @@ impl Parser {
             };
             let end = self.code.len();
             self.code[end_jump] = Instruction::Jump(end);
+            self.task_moved = after_then.iter().zip(self.task_moved.iter())
+                .map(|(left, right)| *left || *right).collect();
             Ok(then_returns && else_returns)
         } else {
             let end = self.code.len();
             self.code[branch] = Instruction::JumpIfFalse(end);
+            self.task_moved = after_then.iter().zip(before_branches.iter())
+                .map(|(left, right)| *left || *right).collect();
             Ok(false)
         }
     }
@@ -537,8 +556,11 @@ impl Parser {
         self.eat(TokenKind::RParen)?;
         let exit = self.code.len();
         self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        let before_loop = self.task_moved.clone();
         self.loops.push(Vec::new());
         self.block()?;
+        self.task_moved = before_loop.iter().zip(self.task_moved.iter())
+            .map(|(left, right)| *left || *right).collect();
         self.code.push(Instruction::Jump(condition));
         let end = self.code.len();
         self.code[exit] = Instruction::JumpIfFalse(end);
@@ -621,8 +643,15 @@ impl Parser {
                     let slot = self
                         .lookup(&name)
                         .ok_or_else(|| format!("unknown variable '{name}'"))?;
+                    let ty = self.local_types[slot];
+                    if ty == StaticType::Task {
+                        if self.task_moved[slot] {
+                            return Err(format!("use of moved or already-consumed task handle '{name}'"));
+                        }
+                        self.task_moved[slot] = true;
+                    }
                     self.code.push(Instruction::Load(slot));
-                    self.local_types[slot]
+                    ty
                 }
             }
             TokenKind::LParen => {
