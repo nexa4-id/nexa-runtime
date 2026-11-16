@@ -66,7 +66,7 @@ fn verifier_rejects_inconsistent_stack_depth_at_branch_merge() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("inconsistent stack depth"), "{error}");
+    assert!(error.contains("inconsistent stack types"), "{error}");
 }
 
 #[test]
