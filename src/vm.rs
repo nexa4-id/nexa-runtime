@@ -310,6 +310,9 @@ impl Vm {
                             "load from uninitialized or invalid local slot {slot} in '{owner}' at instruction {pc}"
                         )
                     })?;
+                    if ty == StackType::Task {
+                        locals[*slot] = None;
+                    }
                     stack.push(ty);
                 }
                 Instruction::Store(slot) => {
@@ -321,6 +324,9 @@ impl Vm {
                     let local = locals
                         .get_mut(*slot)
                         .ok_or_else(|| format!("invalid local slot {slot} in '{owner}'"))?;
+                    if *local == Some(StackType::Task) {
+                        return Err(format!("cannot overwrite live task handle in local slot {slot} in '{owner}'"));
+                    }
                     *local = Some(ty);
                 }
                 Instruction::Add
