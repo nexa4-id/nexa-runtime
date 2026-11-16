@@ -1,1 +1,6 @@
-pub mod compiler;pub mod lexer;pub mod vm;pub mod worker;pub use vm::Vm;pub use worker::{WorkerError,WorkerPool};
+pub mod compiler;
+pub mod lexer;
+pub mod vm;
+pub mod worker;
+pub use vm::Vm;
+pub use worker::{WorkerError, WorkerPool};
