@@ -1,6 +1,6 @@
 use crate::compiler::Instruction;
 use crate::worker::{TaskHandle, WorkerError, WorkerPool};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 type Functions = HashMap<String, (Vec<String>, Vec<Instruction>)>;
 
@@ -160,6 +160,11 @@ impl Vm {
                         code.len()
                     ));
                 }
+                Instruction::Load(slot) if *slot >= initial_locals.len() => {
+                    return Err(format!(
+                        "invalid local slot {slot} in '{owner}' at instruction {index}"
+                    ));
+                }
                 Instruction::Call(name, argc) => {
                     let signature = signatures
                         .get(name)
@@ -171,29 +176,34 @@ impl Vm {
                         ));
                     }
                 }
+                Instruction::DefineFunction(..) => {
+                    return Err(format!("nested function definition in '{owner}'"));
+                }
                 _ => {}
             }
         }
 
-        // Each program point carries an exact operand-stack type sequence and
-        // the types definitely initialized in each local slot.
+        // A forward worklist computes the fixed point. Operand-stack types
+        // must match exactly at merges; local initialization is intersected,
+        // so a slot is usable only if every incoming path initializes it.
         let mut states: Vec<Option<(Vec<StackType>, Vec<Option<StackType>>)>> =
             vec![None; code.len() + 1];
-        let mut pending = vec![(0usize, Vec::<StackType>::new(), initial_locals)];
+        let mut pending = VecDeque::from([(0usize, Vec::<StackType>::new(), initial_locals)]);
 
-        while let Some((pc, mut stack, mut locals)) = pending.pop() {
+        while let Some((pc, incoming_stack, incoming_locals)) = pending.pop_front() {
             if pc > code.len() {
                 return Err(format!("invalid bytecode control-flow target in '{owner}'"));
             }
 
-            if let Some((previous_stack, previous_locals)) = &states[pc] {
-                if previous_stack != &stack {
+            let changed = if let Some((previous_stack, previous_locals)) = &states[pc] {
+                if previous_stack != &incoming_stack {
                     return Err(format!(
-                        "inconsistent stack types in '{owner}' at instruction {pc}: {previous_stack:?} versus {stack:?}"
+                        "inconsistent stack types in '{owner}' at instruction {pc}: {previous_stack:?} versus {incoming_stack:?}"
                     ));
                 }
                 let mut merged = previous_locals.clone();
-                for (slot, (previous, incoming)) in merged.iter_mut().zip(locals.iter()).enumerate()
+                for (slot, (previous, incoming)) in
+                    merged.iter_mut().zip(incoming_locals.iter()).enumerate()
                 {
                     match (*previous, *incoming) {
                         (Some(left), Some(right)) if left != right => {
@@ -201,18 +211,28 @@ impl Vm {
                                 "inconsistent local types in '{owner}' at instruction {pc}: slot {slot} is {left:?} versus {right:?}"
                             ));
                         }
-                        (Some(_), None) => *previous = None,
+                        (Some(_), None) | (None, Some(_)) => *previous = None,
                         _ => {}
                     }
                 }
                 if &merged == previous_locals {
-                    continue;
+                    false
+                } else {
+                    states[pc] = Some((incoming_stack.clone(), merged));
+                    true
                 }
-                states[pc] = Some((stack.clone(), merged.clone()));
-                locals = merged;
             } else {
-                states[pc] = Some((stack.clone(), locals.clone()));
+                states[pc] = Some((incoming_stack, incoming_locals));
+                true
+            };
+
+            if !changed {
+                continue;
             }
+            let (mut stack, mut locals) = states[pc]
+                .as_ref()
+                .expect("changed program point has an abstract state")
+                .clone();
 
             if pc == code.len() {
                 return Err(format!(
@@ -356,12 +376,12 @@ impl Vm {
             }
 
             match instruction {
-                Instruction::Jump(target) => pending.push((*target, stack, locals)),
+                Instruction::Jump(target) => pending.push_back((*target, stack, locals)),
                 Instruction::JumpIfFalse(target) => {
-                    pending.push((*target, stack.clone(), locals.clone()));
-                    pending.push((pc + 1, stack, locals));
+                    pending.push_back((*target, stack.clone(), locals.clone()));
+                    pending.push_back((pc + 1, stack, locals));
                 }
-                _ => pending.push((pc + 1, stack, locals)),
+                _ => pending.push_back((pc + 1, stack, locals)),
             }
         }
         Ok(())
