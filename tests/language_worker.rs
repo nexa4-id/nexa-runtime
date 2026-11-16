@@ -45,3 +45,23 @@ fn typed_integer_function_calls_execute() {
     let mut vm = Vm::new(1).unwrap();
     assert_eq!(vm.run(&code).unwrap(), &["42".to_string()]);
 }
+
+
+#[test]
+fn task_handles_can_pass_through_typed_function_parameters() {
+    let source = r#"
+        fn identity(value: task) -> task {
+            return value;
+        }
+        fn make_task() -> task {
+            return worker.submit { 42 };
+        }
+        fn main() {
+            let task = identity(make_task());
+            print(worker.wait(task));
+        }
+    "#;
+    let code = compiler::compile(source).unwrap();
+    let mut vm = Vm::new(1).unwrap();
+    assert_eq!(vm.run(&code).unwrap(), &["42".to_string()]);
+}
