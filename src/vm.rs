@@ -246,8 +246,7 @@ impl Vm {
         // A forward worklist computes the fixed point. Operand-stack types
         // must match exactly at merges; local initialization is intersected,
         // so a slot is usable only if every incoming path initializes it.
-        let mut states: Vec<Option<VerificationState>> =
-            vec![None; code.len() + 1];
+        let mut states: Vec<Option<VerificationState>> = vec![None; code.len() + 1];
         let mut pending = VecDeque::new();
         pending.push_back((0usize, Vec::<StackType>::new(), initial_locals));
 
