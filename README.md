@@ -25,7 +25,7 @@ Expected output for `worker-basic.nx` is `42`; expected output for `control-flow
 
 ## Current limitations
 
-The language's computed values are integers and task handles. Function signatures support `int` and `task` parameters and return values; task handles cannot be printed or used in arithmetic, and `worker.wait` consumes them at runtime. There are no strings, booleans as a separate type, explicit type annotations, closures, modules, structs, exceptions, or break-values. Conditions use zero as false and non-zero as true. Worker task failures are surfaced through `worker.wait`. The current worker implementation creates a small nested pool for worker tasks that themselves execute nested worker operations; this is correct for the supported subset but is a future optimization target.
+The language's computed values are integers and task handles. Function signatures support `int` and `task` parameters and return values; task handles cannot be printed or used in arithmetic, and `worker.wait` consumes them at runtime. There are no strings, booleans as a separate type, explicit local-variable type annotations, closures, modules, structs, exceptions, or break-values. Conditions use zero as false and non-zero as true. Worker task failures are surfaced through `worker.wait`. The current worker implementation creates a small nested pool for worker tasks that themselves execute nested worker operations; this is correct for the supported subset but is a future optimization target.
 
 ## Validation
 
