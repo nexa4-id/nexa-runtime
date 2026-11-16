@@ -301,7 +301,7 @@ impl Parser {
                     })?;
                     if expected.parameters.len() != *argc {
                         return Err(format!(
-                            "function '{name}' expects {expected} argument(s), got {argc}"
+                            "function '{name}' expects {} argument(s), got {argc}", expected.parameters.len()
                         ));
                     }
                 }
