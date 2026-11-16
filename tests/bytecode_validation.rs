@@ -489,7 +489,6 @@ fn verifier_rejects_duplicate_parameter_names_in_signature() {
     assert!(error.contains("duplicate parameter"), "{error}");
 }
 
-
 #[test]
 fn verifier_rejects_task_handle_as_function_return_value() {
     let code = vec![Instruction::DefineFunction(
@@ -502,5 +501,8 @@ fn verifier_rejects_task_handle_as_function_return_value() {
     )];
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
-    assert!(error.contains("Return") && error.contains("exactly one Int"), "{error}");
+    assert!(
+        error.contains("Return") && error.contains("exactly one Int"),
+        "{error}"
+    );
 }
