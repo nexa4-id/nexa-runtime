@@ -28,14 +28,15 @@ fn vm_validates_nested_worker_bytecode() {
 }
 
 #[test]
-fn vm_accepts_jump_to_exact_end_of_code() {
+fn verifier_rejects_jump_to_end_without_return() {
     let code = vec![Instruction::DefineFunction(
         "main".into(),
         vec![],
         vec![Instruction::Jump(1)],
     )];
     let mut vm = Vm::new(1).unwrap();
-    assert!(vm.run(&code).is_ok());
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("falls through without Return"), "{error}");
 }
 
 #[test]
@@ -201,7 +202,7 @@ fn verifier_accepts_local_initialized_on_both_branches() {
             Instruction::Load(0),
             Instruction::Print,
             Instruction::Const(0),
-            Instruction::Halt,
+            Instruction::Return,
         ],
     )];
     let mut vm = Vm::new(1).unwrap();
@@ -253,7 +254,7 @@ fn verifier_accepts_initialized_parameters() {
         Instruction::DefineFunction(
             "main".into(),
             vec![],
-            vec![Instruction::Const(7), Instruction::Call("identity".into(), 1), Instruction::Print, Instruction::Const(0), Instruction::Halt],
+            vec![Instruction::Const(7), Instruction::Call("identity".into(), 1), Instruction::Print, Instruction::Const(0), Instruction::Return],
         ),
         Instruction::DefineFunction(
             "identity".into(),
@@ -365,4 +366,107 @@ fn verifier_rejects_different_local_types_at_branch_merge() {
     let mut vm = Vm::new(1).unwrap();
     let error = vm.run(&code).unwrap_err();
     assert!(error.contains("inconsistent local types"), "{error}");
+}
+
+
+#[test]
+fn verifier_rejects_function_fallthrough_without_return() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![Instruction::Const(9)],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("falls through without Return"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_halt_as_a_function_terminator() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![Instruction::Const(0), Instruction::Halt],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("Halt is invalid") && error.contains("expected Return"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_return_as_a_worker_terminator() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Submit(vec![Instruction::Const(1), Instruction::Return]),
+            Instruction::Store(0),
+            Instruction::Const(0),
+            Instruction::Return,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("Return is invalid") && error.contains("expected Halt"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_worker_fallthrough_without_halt() {
+    let code = vec![Instruction::DefineFunction(
+        "main".into(),
+        vec![],
+        vec![
+            Instruction::Submit(vec![Instruction::Const(1)]),
+            Instruction::Store(0),
+            Instruction::Const(0),
+            Instruction::Return,
+        ],
+    )];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("falls through without Halt"), "{error}");
+}
+
+#[test]
+fn verifier_checks_call_argument_types_against_function_signature() {
+    let code = vec![
+        Instruction::DefineFunction(
+            "main".into(),
+            vec![],
+            vec![
+                Instruction::Submit(vec![Instruction::Const(1), Instruction::Halt]),
+                Instruction::Call("identity".into(), 1),
+                Instruction::Print,
+                Instruction::Const(0),
+                Instruction::Return,
+            ],
+        ),
+        Instruction::DefineFunction(
+            "identity".into(),
+            vec!["value".into()],
+            vec![Instruction::Load(0), Instruction::Return],
+        ),
+    ];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("argument type mismatch"), "{error}");
+}
+
+#[test]
+fn verifier_rejects_duplicate_parameter_names_in_signature() {
+    let code = vec![
+        Instruction::DefineFunction(
+            "main".into(),
+            vec![],
+            vec![Instruction::Const(0), Instruction::Return],
+        ),
+        Instruction::DefineFunction(
+            "duplicate".into(),
+            vec!["value".into(), "value".into()],
+            vec![Instruction::Load(0), Instruction::Return],
+        ),
+    ];
+    let mut vm = Vm::new(1).unwrap();
+    let error = vm.run(&code).unwrap_err();
+    assert!(error.contains("duplicate parameter"), "{error}");
 }
