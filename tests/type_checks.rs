@@ -145,7 +145,10 @@ fn worker_submit_cannot_capture_task_handle() {
 
 #[test]
 fn task_handle_cannot_be_waited_twice() {
-    let error = compiler::compile("fn main() { let task=worker.submit{1}; worker.wait(task); worker.wait(task); }").unwrap_err();
+    let error = compiler::compile(
+        "fn main() { let task=worker.submit{1}; worker.wait(task); worker.wait(task); }",
+    )
+    .unwrap_err();
     assert!(error.contains("moved or already-consumed"), "{error}");
 }
 
@@ -153,7 +156,10 @@ fn task_handle_cannot_be_waited_twice() {
 fn task_handle_move_is_tracked_across_branches() {
     let both = compiler::compile("fn main() { let task=worker.submit{1}; if (1) { worker.wait(task); } else { worker.wait(task); } }");
     assert!(both.is_ok(), "{both:?}");
-    let one = compiler::compile("fn main() { let task=worker.submit{1}; if (1) { worker.wait(task); } worker.wait(task); }").unwrap_err();
+    let one = compiler::compile(
+        "fn main() { let task=worker.submit{1}; if (1) { worker.wait(task); } worker.wait(task); }",
+    )
+    .unwrap_err();
     assert!(one.contains("task handle"), "{one}");
 }
 
