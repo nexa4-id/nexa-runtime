@@ -200,7 +200,7 @@ impl Vm {
     fn validate_typed_bytecode(
         code: &[Instruction],
         initial_locals: Vec<Option<StackType>>,
-        _functions: &Functions,
+        functions: &Functions,
         signatures: &Signatures,
         owner: &str,
         return_type: StackType,
