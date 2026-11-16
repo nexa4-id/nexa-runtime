@@ -11,6 +11,7 @@ pub use worker::{TaskError, TaskHandle, WorkerPool, WorkerStats};
 #[cfg(test)]
 mod tests {
     use super::{TaskError, WorkerPool};
+    use std::sync::{Arc, Barrier};
 
     #[test]
     fn executes_and_returns_task_result() {
@@ -29,10 +30,27 @@ mod tests {
     }
 
     #[test]
+    fn runs_tasks_on_multiple_workers() {
+        let pool = WorkerPool::new(2);
+        let barrier = Arc::new(Barrier::new(2));
+        let first_barrier = Arc::clone(&barrier);
+        let second_barrier = Arc::clone(&barrier);
+        let first = pool.submit(move || first_barrier.wait().is_leader());
+        let second = pool.submit(move || second_barrier.wait().is_leader());
+        let _ = first.wait().unwrap();
+        let _ = second.wait().unwrap();
+    }
+
+    #[test]
     fn tracks_completed_work() {
         let pool = WorkerPool::new(2);
-        let tasks = (0..8).map(|value| pool.submit(move || value)).collect::<Vec<_>>();
-        let values = tasks.into_iter().map(|task| task.wait().unwrap()).collect::<Vec<_>>();
+        let tasks = (0..8)
+            .map(|value| pool.submit(move || value))
+            .collect::<Vec<_>>();
+        let values = tasks
+            .into_iter()
+            .map(|task| task.wait().unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(values, (0..8).collect::<Vec<_>>());
         assert_eq!(pool.stats().completed, 8);
         assert_eq!(pool.stats().pending, 0);
